@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="Dev-148" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+    <option name="confirmBeforeUploading" value="false" />
+    <serverData>
+      <paths name="Dev-148">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/ec2-user/MMSys-ws" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath path="/home/ec2-user/MMSys-ws/logs" />
+            <excludedPath local="true" path="$PROJECT_DIR$/logs" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+      <paths name="ec2-user@18.141.5.148:22 agent">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/ec2-user/MMSys-ws" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
