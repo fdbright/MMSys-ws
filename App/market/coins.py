@@ -55,9 +55,11 @@ class Coins(MyActionTemplate):
                     volume = 0
                 else:
                     volume = round(((cex_price - cmc_price) / cmc_price) * 100, 2)
+                if dex_price != -1:
+                    volume = round(((cex_price - dex_price) / dex_price) * 100, 2)
                 strategy_data: dict = self.redis.hGet(
-                    name=f"{item.exchange.upper()}-Strategy-DB",
-                    key=f"{coin.symbol}_fts_status_{coin.account}"
+                    name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+                    key=f"fts_status_{coin.symbol}"
                 )
                 data.append(CoinPriceObj(
                     symbol=coin.symbol,
@@ -71,9 +73,11 @@ class Coins(MyActionTemplate):
                     strategy_status=strategy_data.get("status", "stopped")
                 ).to_dict())
             sorted(data, key=lambda x: x["symbol"])
+            if data:
+                await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="获取所有币对数据", data=data)
+        self.after_request(code=1 if data else -1, msg="获取所有币对数据", action=item.channel, data=data)
 
     async def post(self, item: CoinsItem):
         """新增币对"""
@@ -82,25 +86,37 @@ class Coins(MyActionTemplate):
                 data = OrmMarket.create.toCoinsTb.batch(item.exchange, [CoinObj(**val) for val in item.new_coin])
             else:
                 data = OrmMarket.create.toCoinsTb.one(item.exchange, CoinObj(**item.new_coin))
+            if data:
+                await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="新增币对", data=data)
+        self.after_request(code=1 if data else -1, msg="新增币对", action=item.channel, data=data)
 
     async def put(self, item: CoinsItem):
         """修改币对"""
         if self.current_user.monUpdate:
             data = OrmMarket.update.toCoinsTb.one(item.exchange, item.new_coin)
+            if data:
+                await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="修改币对", data=data)
+        self.after_request(code=1 if data else -1, msg="修改币对", action=item.channel, data=data)
 
     async def delete(self, item: CoinsItem):
         """删除币对"""
         if self.current_user.monDelete:
             data = OrmMarket.delete.fromCoinsTb.one(item.exchange, item.symbol)
+            if data:
+                await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="删除币对", data=data)
+        self.after_request(code=1 if data else -1, msg="删除币对", action=item.channel, data=data)
+
+    async def update_redis(self, exchange: str):
+        """更新币对数据redis"""
+        data = OrmMarket.search.fromCoinsTb.all4redis(exchange=exchange)
+        # log.info(data)
+        self.redis.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
 
 
 if __name__ == '__main__':

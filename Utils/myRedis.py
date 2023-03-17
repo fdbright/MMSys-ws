@@ -74,7 +74,9 @@ class MyRedisFunction:
         """读取"""
         conn = self.conn if self.conn else conn
         data = conn.get(key)
-        if "{" in data:
+        if not data:
+            return data
+        elif "{" in data:
             return json.loads(data)
         else:
             return data

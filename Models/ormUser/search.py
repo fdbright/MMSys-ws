@@ -53,6 +53,19 @@ class FromUserTb:
         ).dicts().iterator()
         return list(map(lambda x: self.__initData(x, pwd).to_dict(), query))
 
+    @ExDecorator(event="根据组查询所有用户")
+    def byTeam(self, team: str, pwd: bool = False) -> List[dict]:
+        query = UserModel.select(
+            UserModel, UserPermModel
+        ).join(
+            UserPermModel
+        ).where(
+            UserModel.team == team
+        ).order_by(
+            UserModel.id.asc()
+        ).dicts().iterator()
+        return list(map(lambda x: self.__initData(x, pwd).to_dict(), query))
+
 
 class FromOperateTb:
 

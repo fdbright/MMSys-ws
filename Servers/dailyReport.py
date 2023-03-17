@@ -16,12 +16,9 @@ import os
 import asyncio
 import openpyxl
 import datetime
-from tornado.httpclient import AsyncHTTPClient
 
 from Config import Configure
 from Utils import MyRedis, MyEmail, MyDatetime
-from Database import db
-from Models import LbkRestApi, OrmMarket
 from Objects import AccountObj
 
 
@@ -38,8 +35,6 @@ class DailyReport:
 
         # redis
         self.redis_pool = MyRedis(db=0)
-
-        self.api = LbkRestApi(htp_client=AsyncHTTPClient())
 
         self.accounts: List[AccountObj] = []
         self.accounts_data: Dict[str, dict] = {}
@@ -59,26 +54,8 @@ class DailyReport:
     def get_data_from_redis(self):
         redis = self.redis_pool.open(conn=True)
         self.cmc_price = redis.hGet(name="CMC-DB", key="cmc_price")
+        self.account_dict = redis.hGet(name="LBK-DB", key="account_data")
         redis.close()
-
-    def get_data_from_mysql(self):
-        db.connect(reuse_if_open=True)
-        self.accounts = OrmMarket.search.fromAccountTb.byTeam(exchange=self.exchange, team="jx", decode=True)
-        db.close()
-
-    async def get_account_data(self):
-        log.info("查询账户余额 开始")
-        for account in self.accounts:
-            self.api.api_key = account.apiKey
-            self.api.secret_key = account.secretKey
-            data = await self.api.query_account_info()
-            # print(account.account, data)
-            for row in data.get("account_lst", []):
-                if account.account not in self.accounts_data.keys():
-                    self.accounts_data[account.account] = {}
-                symbol = row.pop("symbol")
-                self.accounts_data[account.account][symbol] = row
-        log.info("查询账户余额 结束")
 
     def write2excel(self, fp: str):
         wb = openpyxl.load_workbook(filename=self.tempFile, read_only=False)
@@ -119,8 +96,6 @@ class DailyReport:
         fn = self.saveFile.format(MyDatetime.add8hr().strftime("%Y-%m-%d %H:%M"))
         fp = os.path.join(self.template, fn)
         self.get_data_from_redis()
-        self.get_data_from_mysql()
-        await self.get_account_data()
         self.write2excel(fp=fp)
         self.send_excel(fp=fp, fn=fn)
         os.remove(fp)

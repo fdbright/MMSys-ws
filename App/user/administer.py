@@ -37,10 +37,13 @@ class Admin(MyActionTemplate):
             if item.username:
                 data = OrmUser.search.fromUserTb.one(item.username, perm=True)
             else:
-                data = OrmUser.search.fromUserTb.all()
+                if self.current_user.team == "":
+                    data = OrmUser.search.fromUserTb.all()
+                else:
+                    data = OrmUser.search.fromUserTb.byTeam(self.current_user.team)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="获取所有用户", data=data)
+        self.after_request(code=1 if data else -1, msg="获取所有用户", action=item.channel, data=data)
 
     async def post(self, item: AdminItem):
         """新增用户"""
@@ -50,7 +53,7 @@ class Admin(MyActionTemplate):
             data = OrmUser.create.toUserTb.one(user_info, user_perm)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="新增用户", data=data)
+        self.after_request(code=1 if data else -1, msg="新增用户", action=item.channel, data=data)
 
     async def put(self, item: AdminItem):
         """修改用户信息"""
@@ -60,7 +63,7 @@ class Admin(MyActionTemplate):
             data = OrmUser.update.toUserTb.one(item.username, item.user_info, item.user_perm)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="修改用户信息", data=data)
+        self.after_request(code=1 if data else -1, msg="修改用户信息", action=item.channel, data=data)
 
     async def delete(self, item: AdminItem):
         """删除用户"""
@@ -68,7 +71,7 @@ class Admin(MyActionTemplate):
             data = OrmUser.delete.fromUserTb.one(item.username)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="删除用户", data=data)
+        self.after_request(code=1 if data else -1, msg="删除用户", action=item.channel, data=data)
 
 
 if __name__ == '__main__':

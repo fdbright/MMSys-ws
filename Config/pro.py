@@ -109,6 +109,9 @@ class ProConf(FrozenDataclass):
     TEMPLATE_PATH: str = "/home/ec2-user/MMSys-ws/Template"
     DAILY_REPORT_PATH: str = "/home/ec2-user/MMSys-ws/Template/日报模板.xlsx"
 
+    LOG_PATH: str = log_path
+    LOG_MAIN: str = os.path.join(log_path, "main.log")
+
 
 if __name__ == '__main__':
     pass

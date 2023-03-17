@@ -34,17 +34,27 @@ class Trade(MyActionTemplate):
         if self.current_user.monOrder:
             api = self.get_rest_api_by_exchange(item.exchange, item.symbol)
             if api:
+                tick_data: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data").get(item.symbol, {})
                 data = await api.query_trans_history(
                     symbol=item.symbol,
                     start_time=item.start_time,
                     final_time=item.final_time,
-                    limit=item.limit
+                    limit=item.limit,
+                    price_tick=tick_data.get("priceTick", 18),
+                    volume_tick=tick_data.get("amountTick", 2),
                 )
             else:
                 data = None
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="查询历史成交记录", data=data)
+        if data:
+            if "error" in data.keys():
+                code = -1
+            else:
+                code = 1
+        else:
+            code = -1
+        self.after_request(code=code, msg="查询历史成交记录", action=item.channel, data=data)
 
 
 if __name__ == '__main__':

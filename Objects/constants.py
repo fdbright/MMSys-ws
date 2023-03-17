@@ -110,7 +110,7 @@ class AccountReturn(FreeDataclass):
     """账户信息"""
 
     exchange: str       # 交易所
-    account_lst: List[Union[dict, AccountInfo]]
+    account_lst: Union[dict, List[Union[dict, AccountInfo]]]
     type: str = "account_data"
 
 
@@ -149,6 +149,7 @@ class CreateOrderReturn(FreeDataclass):
     exchange: str       # 交易所
     result: bool        # 是否成功
     order_id: str       # 订单ID
+    custom_id: str = ""
     type: str = "create_order"
 
 

@@ -14,6 +14,7 @@ from Utils import FrozenDataclass
 class LbkHost(FrozenDataclass):
     # rest: str = "http://10.10.10.96:99/v2/"
     rest: str = "https://www.lbkex.net/v2/"
+    # rest: str = "https://api.lbkex.com/v2/"
     trade_wss: str = "wss://www.lbkex.net/ws/V2/"
     data_wss: str = "wss://www.lbkex.net/ws/V2/"
 

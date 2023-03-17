@@ -28,12 +28,13 @@ class Report(MyActionTemplate):
 
     async def post(self, item: ReportItem):
         """更新日报文件"""
+        # log.info(item)
         if item.new_file:
             with open(Configure.DAILY_REPORT_PATH, "wb") as f:
-                f.write(item.new_file)
-            self.after_request(code=1, msg="上传成功")
+                f.write(eval(item.new_file))
+            self.after_request(code=1, msg="上传成功", action=item.channel)
         else:
-            self.after_request(code=-1, msg="上传失败")
+            self.after_request(code=-1, msg="上传失败", action=item.channel)
 
 
 if __name__ == '__main__':

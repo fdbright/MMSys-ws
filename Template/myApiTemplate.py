@@ -8,10 +8,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from typing import Union
 from loguru import logger as log
 
-import json
-import urllib.parse as up
-from asyncio import Lock
-from tornado.httpclient import HTTPRequest, AsyncHTTPClient
+from aiohttp import ClientSession, ClientResponse
 
 from Objects import Request
 
@@ -23,31 +20,34 @@ class MyApiTemplate:
         self.post = "POST"
         self.put = "PUT"
         self.delete = "DELETE"
-        self.order_count_lock = Lock()
+        self.htp_client: ClientSession = None
 
-    @staticmethod
-    async def get_response(htp_client: AsyncHTTPClient, req: Request) -> Union[dict, list]:
+    async def get_response(self, req: Request) -> Union[dict, list]:
         """异步请求"""
-        if req.params:
-            path = req.host + req.api + "?" + up.urlencode(sorted(req.params.items()))
-        else:
-            path = req.host + req.api
-        request = HTTPRequest(
-            url=path,
-            method=req.method.upper(),
+        # query: list = []
+        # for k, v in sorted(req.params.items()):
+        #     query.append(k + "=" + str(v))
+        # query: str = '&'.join(query)
+        # if req.params:
+        #     path = req.host + req.api + "?" + query
+        #     req.params = {}
+        # else:
+        cr: ClientResponse = await self.htp_client.request(
+            method=req.method,
+            url=req.host + req.api,
             headers=req.headers,
-            body=json.dumps(req.data) if req.data else None,
-            allow_nonstandard_methods=True,
+            params=req.params,
+            data=req.data,
         )
         try:
-            log.info(f"url: {request.url}")
-            resp = await htp_client.fetch(request)
-            resp = json.loads(resp.body.decode(errors="ignore"))
+            log.info(cr.url)
+            resp: dict = await cr.json()
         except Exception as e:
-            log.error(f"请求失败, url: {request.url}, err: {e}")
+            log.error(f"请求失败, url: {cr.url}, err: {e}")
             resp = {}
-        log.info(req)
+        # log.info(req)
         # log.info(resp)
+        del cr
         return resp
 
     def __sign(self, request):
@@ -87,7 +87,7 @@ class MyApiTemplate:
     def __init4account(self, row: dict) -> dict:
         raise NotImplementedError
 
-    async def query_account_info(self) -> dict:
+    async def query_account_info(self, to_dict: bool = False) -> dict:
         """查询账户信息"""
         raise NotImplementedError
 
@@ -109,12 +109,11 @@ class MyApiTemplate:
         else:
             return price_tick, min_volume, volume_tick
 
-    async def get_order_ids(self, order_count: int = 1) -> str:
+    def make_custom_id(self, custom: str) -> str:
         """获取订单ID"""
-        with self.order_count_lock:
-            return str(order_count + 1)
+        raise NotImplementedError
 
-    async def create_order(self, symbol: str, _type: str, price: float, amount: float, conf: dict) -> dict:
+    async def create_order(self, symbol: str, _type: str, price: float, amount: float, custom: str, conf: dict) -> dict:
         """下单"""
         raise NotImplementedError
 
@@ -127,6 +126,7 @@ class MyApiTemplate:
             order_num: int,
             order_amount: float,
             random_index: float,
+            custom: str,
             conf: dict
     ) -> dict:
         """
@@ -138,6 +138,7 @@ class MyApiTemplate:
         :param order_num: 下单档位量
         :param order_amount: 下单总数量
         :param random_index: 随机值
+        :param custom: 订单前缀
         :param conf: 下单配置, 价格精度, 数量精度, 最小数量
         :return:
         """
@@ -151,11 +152,12 @@ class MyApiTemplate:
         """全部撤单"""
         raise NotImplementedError
 
-    def __init4trans(self, row: dict) -> dict:
+    def __init4trans(self, row: dict, price_tick: int, volume_tick: int) -> dict:
         raise NotImplementedError
 
     async def query_trans_history(
-            self, symbol: str = None, start_time: str = None, final_time: str = None, limit: int = None
+            self, symbol: str = None, start_time: str = None, final_time: str = None, limit: int = None,
+            price_tick: int = None, volume_tick: int = None
     ) -> dict:
         """查询历史成交记录"""
         raise NotImplementedError

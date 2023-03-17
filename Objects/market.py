@@ -27,10 +27,10 @@ class Coin(FreeDataclass):
     addr_type: str
 
     account: str
-    profit_rate: float
-    step_gap: float
-    order_amount: int
-    order_nums: int
+    profit_rate: float = 0.05
+    step_gap: float = 0.003
+    order_amount: int = 2000
+    order_nums: int = 20
 
     if1m: bool = False
     team: str = ""

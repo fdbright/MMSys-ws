@@ -6,8 +6,8 @@ from loguru import logger as log
 
 import json
 from datetime import timedelta
-from tornado.httpclient import AsyncHTTPClient
 from tornado.ioloop import PeriodicCallback
+from aiohttp import ClientSession
 
 from Webs import MyWssMethod
 from Utils.myEncoder import MyEncoder
@@ -46,9 +46,18 @@ class V1MainRoute(MyWssMethod):
     def on_close(self):
         self.redis.close()
         try:
+            if "monitor.depth" in self.current_user.channel_dict.keys():
+                msg = {
+                    "action": "unsubscribe",
+                    "subscribe": "depth",
+                    "depth": "50",
+                    "pair": self.current_user.channel_dict["monitor.depth"][-1]["symbol"],
+                }
+                self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
             self.stop_event()
             if self.current_user.on_timer.is_running():
                 self.current_user.on_timer.stop()
+            # await self.current_user.http_client.close()
             log.info(f"关闭连接=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
         except AttributeError:
             pass
@@ -65,8 +74,11 @@ class V1MainRoute(MyWssMethod):
         """
         try:
             item: dict = json.loads(message)
-            # print(type(item), item)
+            # log.info(f"{type(item)}, {item}")
             action: str = item.get("action", "").lower()
+            if action == "ping":
+                self.after_request(code=1, msg="连接状态检查", data={"pong": MyDatetime.timestamp()})
+                return
             if not self.current_user:
                 await self.on_verify(item)
             if action == "close":
@@ -85,17 +97,18 @@ class V1MainRoute(MyWssMethod):
     async def on_timer(self):
         """定时检查websocket连接状态"""
         if self.ws_connection is None or self.ws_connection.is_closing():
+            await self.current_user.http_client.close()
             self.close()
         log.info(f"定时检查=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
 
     async def on_verify(self, item: dict):
         token = self.redis.get(f"tokenID_{item.get('token_id', None)}")
         if not token:
-            self.after_request(code=-1, msg="登陆过期")
+            self.after_request(code=-1, msg="登陆过期", action="verify")
             self.close()
         else:
             self.current_user = UserObj(**MyEncoder.byJWT(Configure.SECRET_KEY).decode(token))
-            self.current_user.http_client = AsyncHTTPClient()
+            self.current_user.http_client = ClientSession(trust_env=True)
             self.current_user.event_dict = {}
             self.current_user.channel_dict = {}
             self.current_user.on_timer = PeriodicCallback(
@@ -103,7 +116,7 @@ class V1MainRoute(MyWssMethod):
             )
             self.current_user.on_timer.start()
             log.info(f"验证通过=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
-            self.after_request(code=200, msg="验证通过")
+            self.after_request(code=200, msg="验证通过", action="verify")
 
     async def on_rest(self, item: dict):
         """rest请求"""
@@ -115,7 +128,7 @@ class V1MainRoute(MyWssMethod):
             elif channel.endswith("operate"):
                 action, obj = Operate, OperateItem
             else:
-                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}")
+                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}", action=channel)
                 return
         elif channel.startswith("market"):
             if channel.endswith("coins"):
@@ -127,7 +140,7 @@ class V1MainRoute(MyWssMethod):
             elif channel.endswith("strategy"):
                 action, obj = Strategy, StrategyItem
             else:
-                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}")
+                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}", action=channel)
                 return
         elif channel.startswith("monitor"):
             if channel.endswith("order"):
@@ -137,10 +150,10 @@ class V1MainRoute(MyWssMethod):
             elif channel.endswith("balance"):
                 action, obj = Balance, BalanceItem
             else:
-                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}")
+                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}", action=channel)
                 return
         else:
-            self.after_request(code=-1, msg="缺少参数: channel")
+            self.after_request(code=-1, msg="缺少参数: channel", action=channel)
             return
         act = action(redis=self.redis, after_request=self.after_request, current_user=self.current_user)
         await act.do_job(obj=obj, item=item)
@@ -154,7 +167,7 @@ class V1MainRoute(MyWssMethod):
         item["method"] = "GET"
         channel: str = item.get("channel", None)
         if channel in self.current_user.event_dict.keys():
-            self.after_request(code=-1, msg=f"重复订阅: {channel}")
+            self.after_request(code=-1, msg=f"重复订阅: {channel}", action=channel)
             return
         if channel.startswith("market"):
             if channel.endswith("coins"):
@@ -164,7 +177,7 @@ class V1MainRoute(MyWssMethod):
             # elif channel.endswith("account"):
             #     action, obj, dt = Account, AccountItem, timedelta(seconds=5)
             else:
-                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}")
+                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}", action=channel)
                 return
         elif channel.startswith("monitor"):
             if channel.endswith("depth"):
@@ -177,16 +190,16 @@ class V1MainRoute(MyWssMethod):
                 self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
                 action, obj, dt = Depth, DepthItem, timedelta(milliseconds=500)
             elif channel.endswith("order"):
-                action, obj, dt = Order, BalanceItem, timedelta(seconds=2)
+                action, obj, dt = Order, OrderItem, timedelta(seconds=2)
             elif channel.endswith("trade"):
-                action, obj, dt = Trade, TradeItem, timedelta(seconds=5)
+                action, obj, dt = Trade, TradeItem, timedelta(seconds=10)
             elif channel.endswith("balance"):
                 action, obj, dt = Balance, BalanceItem, timedelta(seconds=2)
             else:
-                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}")
+                self.after_request(code=-1, msg=f"不支持的参数: channel, {channel}", action=channel)
                 return
         else:
-            self.after_request(code=-1, msg="缺少参数: channel")
+            self.after_request(code=-1, msg="缺少参数: channel", action=channel)
             return
         act = action(redis=self.redis, after_request=self.after_request, current_user=self.current_user)
         await act.do_job(obj, item)
@@ -195,7 +208,7 @@ class V1MainRoute(MyWssMethod):
             callback_time=dt,
             jitter=0.2
         )
-        self.current_user.channel_dict[channel] = [act, obj]
+        self.current_user.channel_dict[channel] = [act, obj, item]
         self.start_event()
 
     async def on_unsubscribe(self, item: dict):
@@ -214,7 +227,7 @@ class V1MainRoute(MyWssMethod):
                 self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
             p = self.current_user.event_dict.get(channel, None)
         else:
-            self.after_request(code=-1, msg="缺少参数: channel")
+            self.after_request(code=-1, msg="缺少参数: channel", action=channel)
             return
         if p and p.is_running():
             p.stop()

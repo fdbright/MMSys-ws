@@ -42,13 +42,15 @@ class MyDatetime:
         return datetime.datetime.now().timestamp()
 
     @staticmethod
-    def ts2str(ts: Union[str, Union[float, int]], thousand: bool = True) -> str:
+    def ts2str(ts: Union[str, Union[float, int]], thousand: bool = True, chz: bool = False) -> str:
         """毫秒"""
         if thousand:
             ts = float(ts) / 1000
         else:
             ts = float(ts)
         dt = datetime.datetime.fromtimestamp(ts)
+        if chz:
+            dt += datetime.timedelta(hours=8)
         return datetime.datetime.strftime(dt, "%Y-%m-%d %H:%M:%S")
 
     @staticmethod

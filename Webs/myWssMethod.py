@@ -36,11 +36,13 @@ class MyWssMethod(WebSocketHandler):
             message = tornado.escape.json_encode(message)
         return self.ws_connection.write_message(message, binary=binary)
 
-    def after_request(self, code: int, msg: str, data=None):
+    def after_request(self, code: int, msg: str, action: str = None, data=None):
         resp: dict = {
             "code": code,
-            "msg": msg
+            "msg": msg,
         }
+        if action:
+            resp["action"] = action
         if data:
             resp["data"] = data
         print("resp", resp)

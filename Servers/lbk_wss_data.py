@@ -1,24 +1,22 @@
 # -*- coding:utf-8 -*-
 # @Author: Aiden
-# @Date: 2023/2/23 22:03
+# @Date: 2023/3/14 17:04
 
 import sys
 sys.path.append("/home/ec2-user/MMSys-ws")
 
-from gevent import monkey
-monkey.patch_all()
 import nest_asyncio
 nest_asyncio.apply()
 
 from loguru import logger as log
 
+import time
 import json
-import gevent
 import asyncio
-from tornado.httpclient import HTTPRequest
-from tornado.websocket import websocket_connect
+from aiohttp.http_websocket import WSMessage
+from aiohttp import ClientSession, ClientWebSocketResponse
 
-from Utils import MyRedis
+from Utils import MyRedis, start_event_loop
 from Objects import DepthReturn
 from Config import Configure, LBKUrl
 
@@ -36,11 +34,14 @@ class LbkWssData:
 
         self.sub_dict: dict = {}
         self.channel: str = Configure.REDIS.wss_channel_lbk
-        self.req = HTTPRequest(LBKUrl.HOST.data_wss)
-        self.conn = None
-        self.event_loop = asyncio.get_event_loop()
 
-    async def sub2redis(self):
+        self._session: ClientSession = None
+        self._ws: ClientWebSocketResponse = None
+
+        self.loop4sub2redis = asyncio.new_event_loop()
+        self.loop4sub2wss = asyncio.new_event_loop()
+
+    def sub2redis(self):
         conn = self.redis_pool.conn2redis()
         pub = self.redis.subscribe(self.channel, conn=conn)
         while True:
@@ -57,7 +58,7 @@ class LbkWssData:
             if action == "subscribe":
                 if client_count == 0:
                     self.sub_dict[key] = 1
-                    await self.conn.write_message(data)
+                    self.add_event_wss(self.write_message(data))
                 else:
                     self.sub_dict[key] += 1
             else:
@@ -65,12 +66,42 @@ class LbkWssData:
                     pass
                 elif client_count == 1:
                     self.sub_dict[key] = 0
-                    await self.conn.write_message(data)
+                    self.add_event_wss(self.write_message(data))
                 else:
                     self.sub_dict[key] -= 1
 
+    async def write_message(self, data: dict):
+        await self._ws.send_str(json.dumps(data))
+
+    async def sub2wss(self):
+        self._session: ClientSession = ClientSession()
+        while True:
+            try:
+                self._ws = await self._session.ws_connect(url=LBKUrl.HOST.data_wss, ssl=False)
+                async for msg in self._ws:  # type: WSMessage
+                    try:
+                        item: dict = msg.json()
+                    except json.decoder.JSONDecodeError:
+                        log.warning(f"websocket data: {msg.data}")
+                    else:
+                        print(item)
+                        await self.on_packet(item)
+            except Exception as e:
+                log.warning(f"websocket 异常: {e}, 即将重连")
+                time.sleep(5)
+
+    async def on_packet(self, data: dict):
+        if data.get("action", None) == "ping":
+            await self.on_ping(data)
+            return
+        _type: str = data.get("type", None)
+        if _type == "depth":
+            await self.on_depth(data)
+        else:
+            pass
+
     async def on_ping(self, data: dict):
-        await self.conn.write_message({"action": "pong", "pong": data["ping"]})
+        await self.write_message(data={"action": "pong", "pong": data["ping"]})
 
     @staticmethod
     def __init4depth(row: list) -> list:
@@ -94,46 +125,13 @@ class LbkWssData:
         )
         conn.close()
 
-    async def on_account(self, data: dict):
-        pass
-
-    async def on_order(self, data: dict):
-        pass
-
-    async def on_trade(self, data: dict):
-        pass
-
-    async def subscribe(self):
-        self.conn = await websocket_connect(self.req)
-        while True:
-            data = await self.conn.read_message()
-            item: dict = json.loads(data)
-            # print("msg:", type(item), item)
-            if item.get("action", None) == "ping":
-                await self.on_ping(item)
-            _type: str = item.get("type", None)
-            if _type == "depth":
-                await self.on_depth(item)
-            elif _type == "trade":
-                await self.on_trade(item)
-            elif _type == "orderUpdate":
-                await self.on_order(item)
-            elif _type == "assetUpdate":
-                await self.on_account(item)
-            else:
-                pass
-
-    def start_wss(self):
-        self.event_loop.run_until_complete(self.subscribe())
-
-    def start_redis(self):
-        self.event_loop.run_until_complete(self.sub2redis())
+    def add_event_wss(self, coro: asyncio.coroutine):
+        asyncio.run_coroutine_threadsafe(coro, self.loop4sub2wss)
 
     def run(self):
-        g1 = gevent.spawn(self.start_wss)
-        g2 = gevent.spawn(self.start_redis)
-
-        gevent.joinall([g1, g2])
+        start_event_loop(self.loop4sub2wss)
+        self.add_event_wss(self.sub2wss())
+        self.sub2redis()
 
 
 if __name__ == '__main__':

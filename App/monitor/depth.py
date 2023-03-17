@@ -23,7 +23,7 @@ class DepthItem(FreeDataclass):
     # kwargs
     symbol: str = None
     exchange: str = "lbk"
-    limit: int = 100
+    limit: int = 50
 
 
 class Depth(MyActionTemplate):
@@ -36,7 +36,7 @@ class Depth(MyActionTemplate):
             bid[3] = bid[2].cumsum()
             ask[3] = ask[2].cumsum()
             bl = [list(row[1].to_dict().values()) for row in bid.iterrows()]
-            al = [list(row[1].to_dict().values()) for row in ask.iterrows()]
+            al = [list(row[1].to_dict().values()) for row in ask.iterrows()][::-1]
             res = [bl, al]
         else:
             res = None
@@ -47,7 +47,7 @@ class Depth(MyActionTemplate):
         info: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key=f"depth_data_{item.symbol.lower()}")
         # log.info(str(info))
         data = self.__init4depth(info)
-        self.after_request(code=1 if data else -1, msg="查询深度", data=data)
+        self.after_request(code=1 if data else -1, msg="查询深度", action=item.channel, data=data)
 
     async def post(self, item: DepthItem):
         """查询深度"""
@@ -65,7 +65,7 @@ class Depth(MyActionTemplate):
                 data = None
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="查询深度", data=data)
+        self.after_request(code=1 if data else -1, msg="查询深度", action=item.channel, data=data)
 
 
 if __name__ == '__main__':

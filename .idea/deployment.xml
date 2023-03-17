@@ -6,18 +6,7 @@
       <paths name="Dev-148">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/ec2-user/MMSys-ws" local="$PROJECT_DIR$" web="/" />
-          </mappings>
-          <excludedPaths>
-            <excludedPath path="/home/ec2-user/MMSys-ws/logs" />
-            <excludedPath local="true" path="$PROJECT_DIR$/logs" />
-          </excludedPaths>
-        </serverdata>
-      </paths>
-      <paths name="ec2-user@18.141.5.148:22 agent">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/home/ec2-user/MMSys-ws" local="$PROJECT_DIR$" />
+            <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

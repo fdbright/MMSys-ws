@@ -84,10 +84,11 @@ class MyHtpMethod(RequestHandler):
             self.current_user = UserObj(username="traveler")
         db.connect(reuse_if_open=True)
 
-    def after_request(self, code: int, msg: str, data=None):
+    def after_request(self, code: int, msg: str, action: str, data=None):
         resp = {
             "code": code,
             "msg": msg,
+            "action": action
         }
         if data:
             resp["data"] = data
@@ -100,6 +101,7 @@ class MyHtpMethod(RequestHandler):
         except Exception as e:
             print(e)
             data = {}
+        log.info(data)
         return data
 
     @tornado.gen.coroutine
