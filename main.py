@@ -14,11 +14,10 @@ from tornado.options import define, options
 
 from App import Login
 from Route import V1MainRoute
-from Utils import MyRedis
+from Utils import MyAioredis
 from Config import Configure
 
-mr = MyRedis(db=0)
-define("redis", default=mr)
+define("redis_pool", default=MyAioredis(db=0))
 define("port", default=12270, help="run on the given port", type=int)
 options.parse_command_line()
 

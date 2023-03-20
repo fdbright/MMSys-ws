@@ -11,7 +11,6 @@ from typing import Optional, Awaitable, Union, Dict, Any
 
 import time
 import tornado.escape
-from tornado.options import options
 from tornado.websocket import WebSocketHandler
 
 
@@ -20,7 +19,6 @@ class MyWssMethod(WebSocketHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.current_user = None
-        self.redis_pool = options.redis
 
     def on_message(self, message: Union[str, bytes]) -> Optional[Awaitable[None]]:
         pass
@@ -30,7 +28,6 @@ class MyWssMethod(WebSocketHandler):
 
     def write_message(self, message: Union[bytes, str, Dict[str, Any]], binary: bool = False):
         if self.ws_connection is None or self.ws_connection.is_closing():
-            # raise WebSocketClosedError()
             return
         if isinstance(message, dict):
             message = tornado.escape.json_encode(message)

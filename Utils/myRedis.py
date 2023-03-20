@@ -9,7 +9,7 @@ from loguru import logger as log
 
 from typing import Union
 
-import json
+import ujson
 import redis
 # from Config import Configure
 
@@ -33,18 +33,18 @@ class MyRedisFunction:
     def pub2channel(self, channel: str, msg: dict, conn: redis.Redis = None):
         """发布消息"""
         conn = self.conn if self.conn else conn
-        conn.publish(channel, json.dumps(msg))
+        conn.publish(channel, ujson.dumps(msg))
 
     def hSet(self, name: str, key: str, value: Union[str, dict], conn: redis.Redis = None):
         """哈希写入"""
         conn = self.conn if self.conn else conn
-        conn.hset(name, key, json.dumps(value) if isinstance(value, dict) else value)
+        conn.hset(name, key, ujson.dumps(value) if isinstance(value, dict) else value)
 
     def hGet(self, name: str, key: str, conn: redis.Redis = None) -> Union[str, dict]:
         """哈希读取"""
         conn = self.conn if self.conn else conn
         data = conn.hget(name, key)
-        return json.loads(data) if data else {}
+        return ujson.loads(data) if data else {}
 
     def hGetAll(self, name: str, conn: redis.Redis = None) -> dict:
         """读取所有"""
@@ -54,7 +54,7 @@ class MyRedisFunction:
         return data
         # return dict(zip(
         #     map(lambda x: x if isinstance(x, str) else x.decode(), data.keys()),
-        #     map(lambda x: json.loads(x if isinstance(x, str) else x.decode()), data.values())
+        #     map(lambda x: ujson.loads(x if isinstance(x, str) else x.decode()), data.values())
         # ))
 
     def hDel(self, name: str, key: str = None, conn: redis.Redis = None):
@@ -68,7 +68,7 @@ class MyRedisFunction:
     def set(self, key: str, value: Union[str, dict], timeout: int = None, conn: redis.Redis = None):
         """写入"""
         conn = self.conn if self.conn else conn
-        conn.set(key, json.dumps(value) if isinstance(value, dict) else value, ex=timeout)
+        conn.set(key, ujson.dumps(value) if isinstance(value, dict) else value, ex=timeout)
 
     def get(self, key: str, conn: redis.Redis = None) -> Union[str, dict, None]:
         """读取"""
@@ -77,7 +77,7 @@ class MyRedisFunction:
         if not data:
             return data
         elif "{" in data:
-            return json.loads(data)
+            return ujson.loads(data)
         else:
             return data
 

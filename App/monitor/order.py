@@ -55,7 +55,8 @@ class Order(MyActionTemplate):
     async def post(self, item: OrderItem):
         """下单"""
         if self.current_user.monOrder:
-            conf: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data").get(item.symbol, {})
+            info: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data")
+            conf: dict = info.get(item.symbol, {})
             api = self.get_rest_api_by_exchange(item.exchange, item.symbol)
             if api:
                 if item.batch:

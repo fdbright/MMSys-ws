@@ -7,7 +7,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 
 from loguru import logger as log
 
-import json
+import ujson
 
 from Config import Configure
 from Utils import MyEmail, MyRedis
@@ -27,7 +27,7 @@ class SendMail:
             # print(type(item), item)
             if item[0] != "message":
                 continue
-            data: dict = json.loads(item[-1])
+            data: dict = ujson.loads(item[-1])
             self.me.init_msg(receivers=data["receivers"], sub_title=data["title"], sub_content=data["content"])
             self.me.send_mail()
 

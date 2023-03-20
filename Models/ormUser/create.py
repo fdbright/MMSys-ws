@@ -51,9 +51,9 @@ if __name__ == '__main__':
     db.connect(reuse_if_open=True)
 
     nu_info = UserInfoObj(
-        username="aiden",
-        password="aiden",
-        email="hai.shi@Lbk.one",
+        username="nick",
+        password="nick",
+        email="xiangyu.chen@lbk.one",
         team="",
         isManager=True,
         isFrozen=False

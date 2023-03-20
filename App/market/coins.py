@@ -9,7 +9,7 @@ from loguru import logger as log
 
 from typing import List
 
-import json
+import ujson
 from dataclasses import dataclass
 
 from Utils import FreeDataclass
@@ -40,24 +40,24 @@ class Coins(MyActionTemplate):
                 coins: List[CoinObj] = OrmMarket.search.fromCoinsTb.all(item.exchange)
             else:
                 coins: List[CoinObj] = OrmMarket.search.fromCoinsTb.byTeam(item.exchange, self.current_user.team)
-            cex_price_dict: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_price")
-            cmc_price_dict: dict = self.redis.hGet(name="CMC-DB", key="cmc_price")
-            dex_price_dict: dict = self.redis.hGetAll(name="DEX-DB")
-            # print(dex_price_dict)
-            contract_data: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data")
+            cex_price_dict: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_price")
+            cmc_price_dict: dict = await self.redis_conn.hGet(name="CMC-DB", key="cmc_price")
+            dex_price_dict: dict = await self.redis_conn.hGet(name="DEX-DB")
+            contract_data: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data")
             data = []
             for coin in coins:
                 price_tick = int(contract_data.get(coin.symbol, {}).get("priceTick", 18))
                 cmc_price = round(float(cmc_price_dict.get(coin.symbol, {}).get("price", -1)), price_tick)
-                dex_price = round(float(json.loads(dex_price_dict.get(coin.symbol, "{}")).get("price", -1)), price_tick)
+                dex_price = round(float(ujson.loads(dex_price_dict.get(coin.symbol, "{}")).get("price", -1)), price_tick)
                 cex_price = float(cex_price_dict.get(coin.symbol, -1))
-                if cmc_price == -1 or not cmc_price:
+                # log.info(f"dex_price: {dex_price}, cmc_price: {cmc_price}")
+                if cmc_price in [-1, 0] or not cmc_price:
                     volume = 0
                 else:
                     volume = round(((cex_price - cmc_price) / cmc_price) * 100, 2)
-                if dex_price != -1:
+                if dex_price not in [-1, 0]:
                     volume = round(((cex_price - dex_price) / dex_price) * 100, 2)
-                strategy_data: dict = self.redis.hGet(
+                strategy_data: dict = await self.redis_conn.hGet(
                     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
                     key=f"fts_status_{coin.symbol}"
                 )
@@ -72,7 +72,7 @@ class Coins(MyActionTemplate):
                     flag=True if abs(volume) >= 5 else False,
                     strategy_status=strategy_data.get("status", "stopped")
                 ).to_dict())
-            sorted(data, key=lambda x: x["symbol"])
+            data = sorted(data, key=lambda x: x["symbol"])
             if data:
                 await self.update_redis(exchange=item.exchange)
         else:
@@ -116,7 +116,7 @@ class Coins(MyActionTemplate):
         """更新币对数据redis"""
         data = OrmMarket.search.fromCoinsTb.all4redis(exchange=exchange)
         # log.info(data)
-        self.redis.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
+        await self.redis_conn.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
 
 
 if __name__ == '__main__':

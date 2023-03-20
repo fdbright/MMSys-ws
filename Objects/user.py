@@ -54,7 +54,7 @@ class User(FreeDataclass):
 
     token_id: str = None
     # api = None
-    # redis_obj = None
+    redis_conn = None
     http_client = None
     event_dict: dict = None
     channel_dict: dict = None

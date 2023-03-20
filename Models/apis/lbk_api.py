@@ -10,8 +10,8 @@ from loguru import logger as log
 from typing import Union, Tuple
 
 import time
-import json
 import hmac
+import ujson
 import random
 import hashlib
 import numpy as np
@@ -290,7 +290,7 @@ class LbkRestApi(MyApiTemplate):
                 }
                 mid.append(params)
         params = {
-            "orders": json.dumps(mid)
+            "orders": ujson.dumps(mid)
         }
         resp, data = await self.__send_request(self.post, self.url.CREATE_BATCH_ORDERS, params, sign=True)
         if data is True:

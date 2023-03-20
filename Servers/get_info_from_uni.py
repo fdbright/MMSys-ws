@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
+from tornado.ioloop import IOLoop, PeriodicCallback
 
-from Utils import MyRedis, MyDatetime, FreeDataclass
+from Utils import MyAioredis, MyDatetime, FreeDataclass
 
 
 @dataclass
@@ -45,11 +46,14 @@ class GetInfoFromDEX:
 
     def __init__(self):
 
+        # loop
+        self.loop = IOLoop.current()
+
         # mysql
         self.db = "mysql+pymysql://root:lbank369@127.0.0.1:3306/mm_sys?charset=utf8"
 
         # redis
-        self.redis_pool = MyRedis(db=0)
+        self.redis_pool = MyAioredis(db=0)
         self.name = "DEX-DB"
         self.key = "dex_price_uni"
 
@@ -185,32 +189,28 @@ class GetInfoFromDEX:
             self.dex_coin_dict[coin] = dex_price.to_dict()
             time.sleep(2)
 
-    def set_redis(self):
-        redis = self.redis_pool.open(conn=True)
+    async def set_redis(self):
+        conn = await self.redis_pool.open(conn=True)
         for symbol, dex_price in self.dex_coin_dict.items():
-            redis.hSet(name=self.name, key=symbol, value=dex_price)
+            await conn.hSet(name=self.name, key=symbol, value=dex_price)
         dt = MyDatetime.today()
         self.dex_coin_dict["upgrade_time"] = MyDatetime.dt2ts(dt, thousand=True)
         self.dex_coin_dict["upgrade_time_dt"] = MyDatetime.dt2str(dt)
         print(self.dex_coin_dict)
-        redis.hSet(name=self.name, key=self.key, value=self.dex_coin_dict)
-        redis.close()
+        await conn.hSet(name=self.name, key=self.key, value=self.dex_coin_dict)
+        await conn.close()
 
-    def main(self):
+    async def on_timer(self):
         self.get_data_from_mysql()
         self.get_price()
-        self.set_redis()
+        await self.set_redis()
         self.dex_coin_dict.clear()
+
+    def run(self):
+        self.loop.run_sync(self.on_timer)
+        PeriodicCallback(self.on_timer, callback_time=datetime.timedelta(minutes=2)).start()
+        self.loop.start()
 
 
 if __name__ == '__main__':
-    from tornado.ioloop import PeriodicCallback, IOLoop
-
-    dex = GetInfoFromDEX()
-    dex.main()
-    PeriodicCallback(
-        callback=dex.main,
-        callback_time=datetime.timedelta(minutes=2),
-        jitter=0.2
-    ).start()
-    IOLoop.instance().start()
+    GetInfoFromDEX().run()

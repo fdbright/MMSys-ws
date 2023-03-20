@@ -70,6 +70,7 @@ class REDIS(FrozenDataclass):
     db_woo: str = "Woo-DB"
 
     send_mail_channel: str = "SendEmail"
+    run_cmd_channel: str = "RunCmd"
     wss_channel_lbk: str = "Conn2WssLbk"
     htp_channel_lbk: str = "Conn2HtpLbk"
 

@@ -4,14 +4,15 @@
 
 from loguru import logger as log
 
-import json
+import ujson
 from datetime import timedelta
-from tornado.ioloop import PeriodicCallback
 from aiohttp import ClientSession
+from tornado.options import options
+from tornado.ioloop import PeriodicCallback
 
 from Webs import MyWssMethod
 from Utils.myEncoder import MyEncoder
-from Utils import MyDatetime, MyRedisFunction
+from Utils import MyDatetime
 from Objects import UserObj
 from Config import Configure
 
@@ -34,17 +35,15 @@ class V1MainRoute(MyWssMethod):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.redis: MyRedisFunction = None
 
-    def prepare(self):
-        self.redis = self.redis_pool.open(conn=True)
+    async def prepare(self):
+        pass
 
     async def open(self):
         self.set_nodelay(True)  # 设置无延迟
         # log.info(f"建立连接=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
 
-    def on_close(self):
-        self.redis.close()
+    async def on_close(self):
         try:
             if "monitor.depth" in self.current_user.channel_dict.keys():
                 msg = {
@@ -53,11 +52,12 @@ class V1MainRoute(MyWssMethod):
                     "depth": "50",
                     "pair": self.current_user.channel_dict["monitor.depth"][-1]["symbol"],
                 }
-                self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
+                await self.current_user.redis_conn.publish(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
             self.stop_event()
             if self.current_user.on_timer.is_running():
                 self.current_user.on_timer.stop()
-            # await self.current_user.http_client.close()
+            await self.current_user.redis_conn.close()
+            await self.current_user.http_client.close()
             log.info(f"关闭连接=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
         except AttributeError:
             pass
@@ -73,8 +73,8 @@ class V1MainRoute(MyWssMethod):
         }
         """
         try:
-            item: dict = json.loads(message)
-            # log.info(f"{type(item)}, {item}")
+            item: dict = ujson.loads(message)
+            log.info(f"{type(item)}, {item}")
             action: str = item.get("action", "").lower()
             if action == "ping":
                 self.after_request(code=1, msg="连接状态检查", data={"pong": MyDatetime.timestamp()})
@@ -102,12 +102,17 @@ class V1MainRoute(MyWssMethod):
         log.info(f"定时检查=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
 
     async def on_verify(self, item: dict):
-        token = self.redis.get(f"tokenID_{item.get('token_id', None)}")
+        conn = await options.redis_pool.open(conn=True)
+        token = await conn.get(f"tokenID_{item.get('token_id', None)}", load=False)
+        log.info(token)
         if not token:
             self.after_request(code=-1, msg="登陆过期", action="verify")
+            await conn.close()
+            del conn
             self.close()
         else:
             self.current_user = UserObj(**MyEncoder.byJWT(Configure.SECRET_KEY).decode(token))
+            self.current_user.redis_conn = conn
             self.current_user.http_client = ClientSession(trust_env=True)
             self.current_user.event_dict = {}
             self.current_user.channel_dict = {}
@@ -155,7 +160,7 @@ class V1MainRoute(MyWssMethod):
         else:
             self.after_request(code=-1, msg="缺少参数: channel", action=channel)
             return
-        act = action(redis=self.redis, after_request=self.after_request, current_user=self.current_user)
+        act = action(after_request=self.after_request, current_user=self.current_user)
         await act.do_job(obj=obj, item=item)
         try:
             del channel, action, obj
@@ -187,7 +192,7 @@ class V1MainRoute(MyWssMethod):
                     "depth": "50",
                     "pair": item["symbol"],
                 }
-                self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
+                await self.current_user.redis_conn.publish(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
                 action, obj, dt = Depth, DepthItem, timedelta(milliseconds=500)
             elif channel.endswith("order"):
                 action, obj, dt = Order, OrderItem, timedelta(seconds=2)
@@ -201,7 +206,7 @@ class V1MainRoute(MyWssMethod):
         else:
             self.after_request(code=-1, msg="缺少参数: channel", action=channel)
             return
-        act = action(redis=self.redis, after_request=self.after_request, current_user=self.current_user)
+        act = action(after_request=self.after_request, current_user=self.current_user)
         await act.do_job(obj, item)
         self.current_user.event_dict[channel] = PeriodicCallback(
             callback=lambda: act.do_job(obj, item.copy()),
@@ -224,7 +229,7 @@ class V1MainRoute(MyWssMethod):
                     "depth": "50",
                     "pair": item["symbol"],
                 }
-                self.redis.pub2channel(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
+                await self.current_user.redis_conn.publish(channel=Configure.REDIS.wss_channel_lbk, msg=msg)
             p = self.current_user.event_dict.get(channel, None)
         else:
             self.after_request(code=-1, msg="缺少参数: channel", action=channel)

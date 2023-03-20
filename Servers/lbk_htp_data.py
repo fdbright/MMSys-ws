@@ -5,25 +5,18 @@
 import sys
 sys.path.append("/home/ec2-user/MMSys-ws")
 
-# from gevent import monkey
-# monkey.patch_all()
-# import nest_asyncio
-# nest_asyncio.apply()
-
 from loguru import logger as log
 
 from typing import List, Dict
 
-import json
-# import gevent
-import asyncio
+import ujson
 from datetime import timedelta
 from dataclasses import dataclass
 from tornado.httpclient import AsyncHTTPClient
-from tornado.ioloop import PeriodicCallback
+from tornado.ioloop import IOLoop, PeriodicCallback
 
 from Models import LbkRestApi
-from Utils import MyRedis
+from Utils import MyAioredis
 from Config import Configure
 
 
@@ -39,8 +32,7 @@ class LbkHtpData:
 
     def __init__(self):
         self.exchange: str = "lbk"
-        self.redis_pool = MyRedis(db=0)
-        self.redis = self.redis_pool.open(conn=False)
+        self.redis_pool = MyAioredis(db=0)
         self.htp_client = AsyncHTTPClient()
         self.api = LbkRestApi(self.htp_client)
 
@@ -54,16 +46,14 @@ class LbkHtpData:
         # 正在币运行数据源
         self.running_symbol: Dict[str, Status] = {}
 
-        # self.event_loop = asyncio.get_event_loop()
+        # loop
+        self.loop = IOLoop.current()
 
     def start_sub(self):
-        # self.event_loop.run_until_complete(self.sub2redis())
         pass
 
     def run(self):
-        # g1 = gevent.spawn(self.start_sub)
-        # gevent.joinall([g1])
-        asyncio.run(self.sub2redis())
+        pass
 
     async def handle(self, item: dict):
         todo: str = item["todo"]
@@ -90,29 +80,29 @@ class LbkHtpData:
                 pass
 
     async def sub2redis(self):
-        conn = self.redis_pool.conn2redis()
-        pub = self.redis.subscribe(Configure.REDIS.htp_channel_lbk, conn=conn)
+        conn = await self.redis_pool.open(conn=True)
+        pub = await conn.subscribe(Configure.REDIS.htp_channel_lbk)
         while True:
             item: list = pub.parse_response(block=True)
             # print(type(item), item)
             if item[0] != "message":
                 continue
-            data: dict = json.loads(item[-1])
+            data: dict = ujson.loads(item[-1])
             await self.handle(item=data)
 
     async def init_query(self, account: str, symbol: str):
-        conn = self.redis_pool.conn2redis()
+        conn = await self.redis_pool.open(conn=True)
         await asyncio.gather(
             self.on_depth(conn, symbol),
             self.on_trade(conn, account, symbol),
             self.on_order(conn, account, symbol),
             self.on_account(conn, account)
         )
-        conn.close()
+        await conn.close()
 
-    def on_timer(self, account: str, symbol: str):
+    async def on_timer(self, account: str, symbol: str):
         event_loop: List[PeriodicCallback] = []
-        conn = self.redis_pool.conn2redis()
+        conn = await self.redis_pool.open(conn=True)
         # 定时查询最近成交
         event_loop.append(PeriodicCallback(
             callback=lambda: self.on_trade(conn, account, symbol),
@@ -128,7 +118,7 @@ class LbkHtpData:
             callback=lambda: self.on_account(conn, account),
             callback_time=timedelta(seconds=5), jitter=0.2
         ))
-        conn.close()
+        await conn.close()
         self.start_event(event_loop)
         return event_loop
 
@@ -145,41 +135,37 @@ class LbkHtpData:
     async def on_trade(self, conn, account: str, symbol: str):
         """查询历史成交"""
         data = await self.api.query_trans_history(symbol)
-        self.redis.hSet(
+        await conn.hSet(
             name=self.redis_name,
             key=f"trade_his_{account}_{symbol}",
             value=data,
-            conn=conn
         )
 
     async def on_order(self, conn, account: str, symbol: str):
         """查询当前挂单"""
         data = await self.api.query_open_orders(symbol)
-        self.redis.hSet(
+        await conn.hSet(
             name=self.redis_name,
             key=f"open_orders_{account}_{symbol}",
             value=data,
-            conn=conn
         )
 
     async def on_account(self, conn, account: str):
         """查询账户余额"""
         data = await self.api.query_account_info()
-        self.redis.hSet(
+        await conn.hSet(
             name=self.redis_name,
             key=f"account_data_{account}",
             value=data,
-            conn=conn
         )
 
     async def on_depth(self, conn, symbol: str):
         """查询深度信息"""
         data = await self.api.query_depth(symbol)
-        self.redis.hSet(
+        await conn.hSet(
             name=self.redis_name,
             key=f"depth_data_{symbol}",
             value=data,
-            conn=conn
         )
 
 

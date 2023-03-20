@@ -44,7 +44,7 @@ class Depth(MyActionTemplate):
 
     async def get(self, item: DepthItem):
         """查询深度"""
-        info: dict = self.redis.hGet(name=f"{item.exchange.upper()}-DB", key=f"depth_data_{item.symbol.lower()}")
+        info: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key=f"depth_data_{item.symbol.lower()}")
         # log.info(str(info))
         data = self.__init4depth(info)
         self.after_request(code=1 if data else -1, msg="查询深度", action=item.channel, data=data)
@@ -55,7 +55,7 @@ class Depth(MyActionTemplate):
             api = self.get_rest_api_by_exchange(item.exchange, item.symbol)
             if api:
                 data = await api.query_depth(symbol=item.symbol, limit=item.limit)
-                self.redis.hSet(
+                await self.redis_conn.hSet(
                     name=f"{item.exchange.upper()}-DB",
                     key=f"depth_data_{item.symbol.lower()}",
                     value=data

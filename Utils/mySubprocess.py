@@ -4,6 +4,7 @@
 
 import tempfile
 import subprocess
+from tornado.process import Subprocess
 
 
 def MySubprocess(cmd: str) -> str:
@@ -19,6 +20,16 @@ def MySubprocess(cmd: str) -> str:
         for lin in lines:
             line += lin.decode()
     return line
+
+
+async def MyAioSubprocess(cmd: str) -> str:
+    p = Subprocess(cmd, shell=True, executable="/bin/bash", stdout=Subprocess.STREAM, stderr=Subprocess.STREAM)
+    # p = Subprocess(cmd, shell=True, stdout=Subprocess.STREAM, stderr=Subprocess.STREAM)
+    out = await p.stdout.read_until_close()
+    try:
+        return out.decode().strip()
+    except AttributeError:
+        return ""
 
 
 if __name__ == '__main__':

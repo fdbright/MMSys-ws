@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from Utils import FreeDataclass
 from Webs import MyActionTemplate
-from Objects import CoinObj
 from Models import OrmMarket
 from Config import Configure
 
@@ -36,8 +35,7 @@ class Strategy(MyActionTemplate):
     async def get(self, item: StrategyItem):
         """查询策略状态"""
         if self.current_user.monStrategy:
-            # info: CoinObj = OrmMarket.search.fromCoinsTb.one(item.exchange, item.symbol)
-            strategy_data: dict = self.redis.hGet(
+            strategy_data: dict = await self.redis_conn.hGet(
                 name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
                 key=f"fts_status_{item.symbol}"
             )
@@ -54,10 +52,11 @@ class Strategy(MyActionTemplate):
     async def post(self, item: StrategyItem):
         """启动策略"""
         if self.current_user.monStrategy:
-            status = self.redis.hGet(
+            data = await self.redis_conn.hGet(
                 name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
                 key=f"fts_status_{item.symbol}"
-            ).get("status", None)
+            )
+            status = data.get("status", None)
             if status in ["running", "starting"]:
                 data = False
             else:
@@ -68,15 +67,14 @@ class Strategy(MyActionTemplate):
                     "order_amount": item.order_amount if item.order_amount else info["order_amount"],
                     "order_nums": item.order_nums if item.order_nums else info["order_nums"]
                 }
-                # fts_count = self.redis.hGet(
-                #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                #     key=f"stg_count_{server_id}"
-                # )
-                # if int(fts_count.get("count", 0)) >= 80:
-                #     server_id = "148"
-                # else:
-                #     server_id = "201"
-                server_id = "148"
+                fts_count = await self.redis_conn.hGet(
+                    name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+                    key=f"stg_count_133"
+                )
+                if int(fts_count.get("count", 0)) <= 120:
+                    server_id = "133"
+                else:
+                    server_id = "56"
                 kwargs = {
                     "todo": "start",
                     "symbol": item.symbol,
@@ -86,7 +84,8 @@ class Strategy(MyActionTemplate):
                     "team": info["team"],
                     "server_id": server_id,
                 }
-                self.redis.pub2channel(
+                log.info(Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server_id=server_id))
+                await self.redis_conn.publish(
                     channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server_id=server_id),
                     msg=kwargs
                 )
@@ -100,10 +99,11 @@ class Strategy(MyActionTemplate):
         if self.current_user.monStrategy:
             info: dict = OrmMarket.search.fromCoinsTb.forStg(item.exchange, item.symbol, decode=True)
             account = info["account"]
-            server_id = self.redis.hGet(
+            data = await self.redis_conn.hGet(
                 name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
                 key=f"fts_status_{item.symbol}"
-            ).get("server_id", "148")
+            )
+            server_id = data.get("server_id", "133")
             kwargs = {
                 "todo": "stop",
                 "symbol": item.symbol,
@@ -112,7 +112,7 @@ class Strategy(MyActionTemplate):
                 "team": info["team"],
                 "server_id": server_id
             }
-            self.redis.pub2channel(
+            await self.redis_conn.publish(
                 channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server_id=server_id),
                 msg=kwargs
             )

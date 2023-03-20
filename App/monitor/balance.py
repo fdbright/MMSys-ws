@@ -7,7 +7,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 
 from loguru import logger as log
 
-import json
+import ujson
 from dataclasses import dataclass
 
 from Utils import FreeDataclass
@@ -34,27 +34,24 @@ class Balance(MyActionTemplate):
             api = self.get_rest_api_by_exchange(item.exchange, item.symbol)
             if api:
                 data = await api.query_account_info(to_dict=True)
-                price_tick: int = int(self.redis.hGet(
-                    name=f"{item.exchange.upper()}-DB", key="contract_data"
-                ).get(item.symbol, {}).get("priceTick", 18))
 
-                cmc_price = round(float(self.redis.hGet(
-                    name="CMC-DB", key="cmc_price"
-                ).get(item.symbol, {}).get("price", -1)), price_tick)
+                info = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data")
+                price_tick: int = int(info.get(item.symbol, {}).get("priceTick", 18))
 
-                dex_price = round(float(json.loads(self.redis.hGetAll(
-                    name="DEX-DB"
-                ).get(item.symbol, "{}")).get("price", -1)), price_tick)
+                info = await self.redis_conn.hGet(name="CMC-DB", key="cmc_price")
+                cmc_price = round(info.get(item.symbol, {}).get("price", -1), price_tick)
 
-                cex_price = float(self.redis.hGet(
-                    name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_price"
-                ).get(item.symbol, -1))
+                info = await self.redis_conn.hGet(name="DEX-DB")
+                dex_price = round(float(ujson.loads(info.get(item.symbol, "{}")).get("price", -1)), price_tick)
 
-                if cmc_price == -1 or not cmc_price:
+                info = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_price")
+                cex_price = float(info.get(item.symbol, -1))
+
+                if cmc_price in [-1, 0] or not cmc_price:
                     data["volume"] = 0
                 else:
                     data["volume"] = round(((cex_price - cmc_price) / cmc_price) * 100, 2)
-                if dex_price != -1:
+                if dex_price not in [-1, 0]:
                     data["volume"] = round(((cex_price - dex_price) / dex_price) * 100, 2)
                 data["cmc_price"] = cmc_price
                 data["dex_price"] = dex_price

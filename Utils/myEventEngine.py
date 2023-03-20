@@ -2,47 +2,141 @@
 # @Author: Aiden
 # @Date: 2023/3/13 22:49
 
-from time import sleep
-from queue import Queue, Empty
+import sys
+sys.path.append("/home/ec2-user/MMSys-ws")
+
 from threading import Thread
-from asyncio import get_event_loop, set_event_loop, run_coroutine_threadsafe
+from asyncio import set_event_loop
+
+from loguru import logger as log
+
+import time
+import ujson
+import asyncio
+from tornado.gen import sleep
+from tornado.queues import Queue
+from tornado.ioloop import IOLoop
+from aiohttp.http_websocket import WSMessage
+from aiohttp import ClientSession, ClientResponse
 
 
-class MyEventEngine:
+class MyEngine:
 
-    def __init__(self, interval: float = 1):
+    def __init__(self):
+        self._queue = Queue()
+        self.loop = IOLoop.current()
 
-        self._interval = interval
-        self._active: bool = False
-        self._queue: Queue = Queue()
-        self._loop = get_event_loop()
+        self.session: ClientSession = ClientSession(trust_env=True)
 
-        self._normal = Thread(target=self._normal)
-        self._timer = Thread(target=self._run_timer)
+        self._register_lst = []
 
-    def _run_timer(self):
-        while self._active:
-            sleep(self._interval)
-            # self._queue.put()
+    async def _task(self) -> None:
+        while True:
+            task, args = await self._queue.get()
+            if args:
+                await task(*args)
+            else:
+                await task()
 
-    def _normal(self):
-        while self._active:
+    async def _timer(self, interval: float):
+        while True:
+            await sleep(interval)
+            await self.add_task(self.on_timer)
+
+    async def add_task(self, task: asyncio.coroutine, args: tuple = None) -> None:
+        await self._queue.put([task, args])
+
+    async def on_timer(self):
+        pass
+
+    async def register(self, event: str, task: asyncio.coroutine):
+        pass
+
+    def start(self, interval: float = 0) -> None:
+        self.loop.add_callback(self._task)
+        if interval:
+            self.loop.add_callback(lambda: self._timer(interval))
+        self.loop.start()
+
+    def stop(self) -> None:
+        self.loop.stop()
+
+
+class RestClient:
+
+    def __init__(self, session: ClientSession = None):
+        self.session: ClientSession = session
+
+    async def get_response(self, req):
+        if req.params:
+            query: list = []
+            for k, v in sorted(req.params.items()):
+                query.append(k + "=" + str(v))
+            query: str = '&'.join(query)
+            path = req.host + req.api + "?" + query
+            req.params = {}
+        else:
+            path = req.host + req.api
+        cr: ClientResponse = await self.session.request(
+            method=req.method,
+            url=path,
+            headers=req.headers,
+            params=req.params,
+            data=req.data,
+        )
+        try:
+            # log.info(cr.url)
+            resp: dict = await cr.json()
+        except Exception as e:
+            log.error(f"请求失败, url: {cr.url}, err: {e}")
+            resp = {}
+        del cr
+        return resp
+
+
+class WebsocketClient:
+
+    def __init__(self, session: ClientSession = None):
+
+        self._ws = None
+
+        self.session: ClientSession = session
+
+        self.is_connected: bool = False
+
+    async def on_ping(self, data: dict):
+        pass
+
+    async def on_connected(self):
+        pass
+
+    async def on_packet(self, data: dict):
+        pass
+
+    async def send_packet(self, data: dict):
+        try:
+            await self._ws.send_str(ujson.dumps(data))
+        except AttributeError:
+            pass
+
+    async def subscribe(self, url: str):
+        while True:
             try:
-                event = self._queue.get(block=True, timeout=1)
-                start_event_loop(self._loop)
-                run_coroutine_threadsafe(event(), self._loop)
-            except Empty:
-                pass
-
-    def start(self):
-        self._active = True
-        self._normal.start()
-        self._timer.start()
-
-    def stop(self):
-        self._active = False
-        self._normal.join()
-        self._timer.join()
+                self._ws = await self.session.ws_connect(url=url, ssl=False)
+                await self.on_connected()
+                async for msg in self._ws:  # type: WSMessage
+                    self.is_connected = True
+                    try:
+                        item: dict = msg.json(loads=ujson.loads)
+                    except Exception as e:
+                        log.warning(f"websocket data: {msg.data}, {e}")
+                    else:
+                        await self.on_packet(item)
+                self._ws = None
+            except Exception as e:
+                log.warning(f"websocket 异常: {e}, 即将重连")
+                self.is_connected = False
+                time.sleep(5)
 
 
 def start_event_loop(loop):
@@ -55,3 +149,7 @@ def run_event_loop(loop) -> None:
     """运行事件循环"""
     set_event_loop(loop)
     loop.run_forever()
+
+
+if __name__ == '__main__':
+    pass

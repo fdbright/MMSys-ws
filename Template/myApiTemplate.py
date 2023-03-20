@@ -40,7 +40,7 @@ class MyApiTemplate:
             data=req.data,
         )
         try:
-            log.info(cr.url)
+            # log.info(cr.url)
             resp: dict = await cr.json()
         except Exception as e:
             log.error(f"请求失败, url: {cr.url}, err: {e}")

@@ -11,18 +11,22 @@ import datetime
 import pandas as pd
 from requests import Session
 from sqlalchemy import create_engine
-from Utils import MyRedis, MyDatetime
+from tornado.ioloop import PeriodicCallback, IOLoop
+
+from Utils import MyAioredis, MyDatetime
 
 
 class GetInfoFromCMC:
 
     def __init__(self):
+        # loop
+        self.loop = IOLoop.current()
 
         # mysql
         self.db = "mysql+pymysql://root:lbank369@127.0.0.1:3306/mm_sys?charset=utf8"
 
         # redis
-        self.redis_pool = MyRedis(db=0)
+        self.redis_pool = MyAioredis(db=0)
         self.name = "CMC-DB"
         self.key = "cmc_price"
         self.channel = "CMC-WS-DB"
@@ -87,17 +91,17 @@ class GetInfoFromCMC:
     def formatDt2ts(dt: str) -> int:
         return datetime.datetime.strptime(dt, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() if dt else 0
 
-    def get_resp(self, symbol, convert):
+    async def get_resp(self, symbol, convert):
         self.params["symbol"] = symbol
         self.params["convert"] = convert
         return self.session.get(self.path, params=self.params).json()
 
-    def get_cmc_price(self):
+    async def get_cmc_price(self):
         # self.cmc_coin_dict = {}
         mid: dict = {}
         for k, pairs in self.symbols.items():
             for v in pairs:
-                resp = self.get_resp(symbol=v, convert=k)
+                resp = await self.get_resp(symbol=v, convert=k)
                 # print(resp)
                 data: dict = resp["data"]
                 mid.update(data)
@@ -126,8 +130,8 @@ class GetInfoFromCMC:
             "last_updated": -1
         }
 
-    def set_redis(self):
-        redis = self.redis_pool.open(conn=True)
+    async def set_redis(self):
+        conn = await self.redis_pool.open(conn=True)
         all_data = {}
         for symbol, v in self.cmc_coin_dict.items():
             value = {
@@ -137,27 +141,23 @@ class GetInfoFromCMC:
                 "timestamp": v["last_updated"],
             }
             all_data[symbol] = value
-            redis.hSet(name=self.name, key=symbol, value=value)
+            await conn.hSet(name=self.name, key=symbol, value=value)
         dt = MyDatetime.today()
         all_data["upgrade_time"] = MyDatetime.dt2ts(dt, thousand=True)
         all_data["upgrade_time_dt"] = MyDatetime.dt2str(dt)
-        redis.hSet(name=self.name, key=self.key, value=all_data)
-        redis.close()
+        await conn.hSet(name=self.name, key=self.key, value=all_data)
+        await conn.close()
 
-    def main(self):
+    async def on_timer(self):
         self.get_data_from_mysql()
-        self.get_cmc_price()
-        self.set_redis()
+        await self.get_cmc_price()
+        await self.set_redis()
+
+    def run(self):
+        self.loop.run_sync(self.on_timer)
+        PeriodicCallback(self.on_timer, callback_time=datetime.timedelta(minutes=15)).start()
+        self.loop.start()
 
 
 if __name__ == '__main__':
-    from tornado.ioloop import PeriodicCallback, IOLoop
-
-    cmc = GetInfoFromCMC()
-    cmc.main()
-    PeriodicCallback(
-        callback=cmc.main,
-        callback_time=datetime.timedelta(minutes=15),
-        jitter=0.2
-    ).start()
-    IOLoop.instance().start()
+    GetInfoFromCMC().run()
