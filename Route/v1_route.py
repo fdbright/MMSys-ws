@@ -120,7 +120,7 @@ class V1MainRoute(MyWssMethod):
                 callback=self.on_timer, callback_time=timedelta(seconds=10), jitter=0.2
             )
             self.current_user.on_timer.start()
-            log.info(f"验证通过=[{self.current_user.username}]-[{MyDatetime.now2str()}]")
+            log.info(f"验证通过=[{self.current_user.username}]-[{MyDatetime.now2str()}]-[{options.port}]")
             self.after_request(code=200, msg="验证通过", action="verify")
 
     async def on_rest(self, item: dict):

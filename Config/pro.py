@@ -78,7 +78,7 @@ class REDIS(FrozenDataclass):
     stg_to_start: str = "{exchange}-STG-DB-TO-START"
     stg_to_stop: str = "{exchange}-STG-DB-TO-STOP"
     stg_running: str = "{exchange}-STG-DB-RUNNING"
-    stg_ws_channel: str = "{exchange}-STG-WS-DB-{server_id}"
+    stg_ws_channel: str = "{exchange}-STG-WS-DB-{server}"
     stg_db: str = "{exchange}-STG-DB"
 
 

@@ -183,7 +183,7 @@ class GetInfoFromDEX:
                 dex_price = sorted(dex_lst, key=lambda x: x.baseDepth)[-1]
                 self.symbols_type[coin] = dex_price.type
             self.dex_coin_dict[coin] = dex_price.to_dict()
-            time.sleep(2)
+            time.sleep(3)
 
     async def set_redis(self):
         conn = await self.redis_pool.open(conn=True)

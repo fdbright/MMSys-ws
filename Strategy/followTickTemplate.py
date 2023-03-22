@@ -70,7 +70,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         self.f_coin, self.l_coin = self.symbol.upper().split("_")
         self.account: str = ""
         self.exchange: str = options.exchange.lower()
-        self.server_id: str = options.server_id
+        self.server: str = options.server
 
         # log
         self.fp = os.path.join(Configure.LOG_PATH, "stg", f"stg_{self.symbol}.log")
@@ -86,7 +86,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             "start_time": "",
             "upgrade_time": "",
             "upgrade_time_dt": "",
-            "server_id": self.server_id,
+            "server": self.server,
             "conf": {}
         }
 
@@ -154,6 +154,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             pass
         self.api.api_key = self.conf.apiKey
         self.api.secret_key = self.conf.secretKey
+        log.info("根据交易所初始化 api")
 
     async def get_conf_from_redis(self):
         conn = await self.redis_pool.open(conn=True)
@@ -166,20 +167,30 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         else:
             self.conf.secretKey = MyEncoder.byDES(Configure.SECRET_KEY).decode(self.conf.secretKey)
 
-            if options.step_gap:
-                self.conf.step_gap = options.step_gap
-            if options.order_amount:
-                self.conf.order_amount = options.order_amount
-            if options.order_nums:
-                self.conf.order_nums = options.order_nums
-            if options.profit_rate:
-                self.conf.profit_rate = options.profit_rate
+            self.conf.step_gap = float(self.conf.step_gap)              # 步长
+            self.conf.order_amount = int(self.conf.order_amount / 2)    # 挂单量
+            self.conf.order_nums = int(self.conf.order_nums)            # 档位
+            self.conf.profit_rate = float(self.conf.profit_rate / 2)    # 点差
 
             self.status_value["conf"] = self.conf.to_dict()
-
         await conn.close()
         del conn, data
-        log.info("获取 币对配置信息")
+        log.info(f"获取 币对配置信息: {self.conf}")
+
+    async def check_open_orders(self):
+        log.info("检查是否有上次策略遗留挂单")
+        resp: dict = await self.api.query_open_orders(symbol=self.symbol)
+        order_lst: List[dict] = resp.get("order_lst", [])
+        for order in order_lst:
+            custom_id: str = order["custom_id"]
+            if custom_id.startswith(self.custom):
+                order_id = order["order_id"]
+                if order["order_id"] not in self.current_order_ids:
+                    await self.api.cancel_order(symbol=self.symbol, order_id=order_id)
+                    log.info(f"上次策略遗留挂单, 执行撤单, custom_id: {custom_id}, order_id: {order_id}")
+                del order_id
+            del custom_id
+        del resp, order_lst
 
     async def get_tick_from_redis(self):
         conn = await self.redis_pool.open(conn=True)
@@ -203,7 +214,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             data = await conn.hGet(name="CMC-DB", key=self.symbol)
             self.cmc_price = float(data.get("price", -1))
             data = await conn.hGet(name="DEX-DB", key=self.symbol)
-            self.dex_price = float(data.get("price", -1))
+            self.dex_price = round(float(data.get("price", -1)), self.price_tick)
         except Exception as e:
             log.error(f"获取 price 失败: {self.symbol}, {e}")
         try:
@@ -292,12 +303,15 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             ava = self.coin_balance * self.thisPrice
         if ava < self.conf.order_amount:
             self.conf.order_amount = round(ava * random.uniform(0.5, 0.9))
+        del ava
         mid = int(self.conf.order_amount / self.conf.order_nums)
         for _ in range(self.conf.order_nums):
             amount = round(random.uniform(0.5, 1.5) * mid, 2)
             if amount <= 10:
                 amount = round(random.uniform(1, 1.5) * 10, 2)
             res.append(round(amount / self.thisPrice, self.volume_tick))
+            del amount
+        del mid
         if trade_type == "bid":
             return sorted(res, reverse=True)
         else:
@@ -319,7 +333,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
                 ba = bid_ask * (1 + self.conf.profit_rate)
                 ba_price = np.linspace(ba * (1 + self.conf.step_gap * self.conf.order_nums), ba, self.conf.order_nums)
                 ba_price = sorted(ba_price)
-
+            del ba
             return pd.Series(ba_price, index=range(1, self.conf.order_nums + 1)).to_dict()
         except Exception as e:
             print(f"计算订单本出错: {e}")
@@ -352,6 +366,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             ob[k] = {"price": price, "volume": vl_bid[k - 1]}
         for k, price in ob_ask.items():
             ob[0 - k] = {"price": price, "volume": vl_ask[k - 1]}
+        del ob_bid, ob_ask, vl_bid, vl_ask
         return ob
 
     async def cal_change_orders(self, to_change):
@@ -429,6 +444,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         del conn, now
 
     async def on_timer(self):
+        log.info(f"ws_status: {self.is_connected}")
         if not self.is_connected:
             return
         self.time_count += 1
@@ -472,7 +488,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
                 self.conf.profit_rate *= 4
             if not self.price_tick:
                 return
-            self.thisPrice = self.dex_price if self.dex_price != -1 else self.cmc_price
+            self.thisPrice = self.dex_price if self.dex_price not in [-1, 0] else self.cmc_price
             if self.thisPrice == -1:
                 return
 
@@ -482,6 +498,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
                 self.first_time = False
                 self.lastPrice = self.thisPrice
                 self.this_orderbook = self.cal_O_V(price=self.thisPrice)
+                log.info(f"首次订单本: {self.this_orderbook}")
                 for k, v in self.this_orderbook.items():  # 从内向外挂单
                     trade_type = "buy" if k > 0 else "sell"
                     od = OrderData(
@@ -605,10 +622,13 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         await self.api.refresh_subscribeKey(self.subscribe_key)
 
     async def initialize(self):
-        await self.get_conf_from_redis()
-        await self.init_by_exchange()
+        await self.get_conf_from_redis()    # 获取币对&策略配置
+        await self.init_by_exchange()       # 初始化Api
+        await sleep(0.5)
+        await self.check_open_orders()      # 撤销上次策略遗留挂单
         # subscribe_key
         data = await self.api.query_subscribeKey()
+        log.info(f"subscribe_key: {data}")
         self.subscribe_key = data.get("key", None)
         del data
         await self.get_tick_from_redis()
@@ -624,11 +644,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
 if __name__ == '__main__':
     define(name="symbol", type=str, default="apollo_usdt")
     define(name="exchange", type=str, default="lbk")
-    define(name="server_id", type=str, default="133")
-    define(name="step_gap", type=float, default=None)       # 步长
-    define(name="order_amount", type=int, default=200)      # 挂单量
-    define(name="order_nums", type=int, default=10)         # 档位
-    define(name="profit_rate", type=float, default=None)    # 点差
+    define(name="server", type=str, default="main")
 
     define(name="redis_pool", default=MyAioredis(0))
 

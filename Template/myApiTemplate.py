@@ -8,6 +8,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from typing import Union
 from loguru import logger as log
 
+import ujson
 from aiohttp import ClientSession, ClientResponse
 
 from Objects import Request
@@ -24,24 +25,37 @@ class MyApiTemplate:
 
     async def get_response(self, req: Request) -> Union[dict, list]:
         """异步请求"""
-        # query: list = []
-        # for k, v in sorted(req.params.items()):
-        #     query.append(k + "=" + str(v))
-        # query: str = '&'.join(query)
         # if req.params:
+        #     query: list = []
+        #     for k, v in sorted(req.params.items()):
+        #         query.append(k + "=" + str(v))
+        #     query: str = '&'.join(query)
         #     path = req.host + req.api + "?" + query
         #     req.params = {}
         # else:
+        #     path = req.host + req.api
+        path = req.host + req.api
         cr: ClientResponse = await self.htp_client.request(
             method=req.method,
-            url=req.host + req.api,
+            url=path,
             headers=req.headers,
             params=req.params,
             data=req.data,
         )
         try:
             # log.info(cr.url)
-            resp: dict = await cr.json()
+            status_code = cr.status
+            if status_code // 100 == 2:
+                resp: dict = await cr.json(loads=ujson.loads)
+                # log.info(f"status_code: {status_code}, resp: {resp}")
+            else:
+                resp: str = await cr.text()
+                log.info(f"status_code: {status_code}, resp: {resp}")
+            # text: str = await cr.text()
+            # if status_code // 100 == 2:
+            #     resp = ujson.loads(text)
+            # else:
+            #     resp = {}
         except Exception as e:
             log.error(f"请求失败, url: {cr.url}, err: {e}")
             resp = {}

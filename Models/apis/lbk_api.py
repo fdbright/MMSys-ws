@@ -200,6 +200,7 @@ class LbkRestApi(MyApiTemplate):
             deal_price=float(row["cummulativeQuoteQty"]) / (float(row["executedQty"]) or 1),
             deal_amount=float(row["executedQty"]),
             order_id=row["orderId"],
+            custom_id=row.get("clientOrderId", ""),
             status=self.__order_status.get(str(row["status"])),
             create_time=MyDatetime.ts2str(row["time"], chz=True),
             update_time=MyDatetime.ts2str(row["updateTime"], chz=True)

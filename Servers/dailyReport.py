@@ -45,7 +45,8 @@ class DailyReport:
         self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
         # self.receivers: list = ["hai.shi@Lbk.one"]
         self.receivers: list = [
-            "junxiang@lbk.one", "zhiwei.chen@lbk.one", "rujie.wei@lbk.one", "chao.lu@lbk.one", "bingui.qin@lbk.one"
+            "junxiang@lbk.one", "zhiwei.chen@lbk.one", "rujie.wei@lbk.one", "chao.lu@lbk.one", "bingui.qin@lbk.one",
+            # "hai.shi@Lbk.one"
         ]
 
         self.account_dict: Dict[str, dict] = {}

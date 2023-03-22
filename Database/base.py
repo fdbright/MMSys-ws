@@ -13,7 +13,7 @@ from Config import Configure
 db = PooledMySQLDatabase(
     Configure.MYSQL.database,
     max_connections=300,     # 最大连接数
-    stale_timeout=300,       # 秒
+    stale_timeout=60,        # 秒
     user=Configure.MYSQL.user,
     host=Configure.MYSQL.host,
     port=Configure.MYSQL.port,

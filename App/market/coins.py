@@ -12,6 +12,7 @@ from typing import List
 import ujson
 from dataclasses import dataclass
 
+from Database import db
 from Utils import FreeDataclass
 from Config import Configure
 from Webs import MyActionTemplate
@@ -114,9 +115,11 @@ class Coins(MyActionTemplate):
 
     async def update_redis(self, exchange: str):
         """更新币对数据redis"""
+        db.connect(reuse_if_open=True)
         data = OrmMarket.search.fromCoinsTb.all4redis(exchange=exchange)
         # log.info(data)
-        await self.redis_conn.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
+        if data:
+            await self.redis_conn.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
 
 
 if __name__ == '__main__':

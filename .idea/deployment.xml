@@ -8,6 +8,11 @@
           <mappings>
             <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/Utils/myEncoder.py" />
+            <excludedPath path="/MMSys-ws/logs" />
+            <excludedPath local="true" path="$USER_HOME$/Library/CloudStorage/坚果云-2064501827@qq.com/MMSys-ws/logs" />
+          </excludedPaths>
         </serverdata>
       </paths>
       <paths name="ec2-user@18.141.5.148">
@@ -15,6 +20,10 @@
           <mappings>
             <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/Utils/myEncoder.py" />
+            <excludedPath path="/MMSys-ws/logs" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>

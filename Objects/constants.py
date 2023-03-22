@@ -125,6 +125,7 @@ class OrderInfo(FreeDataclass):
     deal_price: float   # 成交金额
     deal_amount: float  # 成交数量
     order_id: str       # 订单ID
+    custom_id: str      # 自定义ID
     status: str         # 订单状态
     create_time: str    # 订单创建时间
     update_time: str    # 最后更新时间

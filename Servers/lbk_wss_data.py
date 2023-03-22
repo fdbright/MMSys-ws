@@ -48,24 +48,11 @@ class LbkWssData(WebsocketClient):
             data: dict = ujson.loads(item[-1])
             pair: str = data["pair"]
             action: str = data["action"]
-            channel: str = data["subscribe"]
-            key: tuple = (pair, channel)
-            client_count = self.sub_dict.get(key, 0)
             if action == "subscribe":
-                if client_count == 0:
-                    self.sub_dict[key] = 1
-                    await self.send_packet(data)
-                else:
-                    self.sub_dict[key] += 1
+                await self.send_packet(data)
             else:
-                if client_count == 0:
-                    pass
-                elif client_count == 1:
-                    self.sub_dict[key] = 0
-                    await self.send_packet(data)
-                    await conn.hDel(name=self.redis_name, key=self.depth_data_key.format(symbol=pair))
-                else:
-                    self.sub_dict[key] -= 1
+                await self.send_packet(data)
+                await conn.hDel(name=self.redis_name, key=self.depth_data_key.format(symbol=pair))
 
     async def on_packet(self, data: dict):
         if data.get("action", None) == "ping":

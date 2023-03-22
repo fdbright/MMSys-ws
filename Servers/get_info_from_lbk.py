@@ -13,7 +13,7 @@ from datetime import timedelta
 from aiohttp import ClientSession
 from tornado.ioloop import PeriodicCallback, IOLoop
 
-from Utils import MyRedis, MyDatetime
+from Utils import MyAioredis, MyDatetime
 from Objects import AccountObj
 from Database import db
 from Models import LbkRestApi, OrmMarket
@@ -28,7 +28,7 @@ class GetInfoFromLBK:
         self.db = "mysql+pymysql://root:lbank369@127.0.0.1:3306/mm_sys?charset=utf8"
 
         # redis
-        self.redis_pool = MyRedis(db=0)
+        self.redis_pool = MyAioredis(db=0)
         self.name = f"{self.exchange.upper()}-DB"
 
         # rest api
@@ -96,8 +96,8 @@ class GetInfoFromLBK:
         await self.on_account()
         await self.on_contract()
 
-    def set_redis(self):
-        redis = self.redis_pool.open(conn=True)
+    async def set_redis(self):
+        conn = await self.redis_pool.open(conn=True)
         dt = MyDatetime.today()
         upgrade_time = MyDatetime.dt2ts(dt, thousand=True)
         upgrade_time_dt = MyDatetime.dt2str(dt)
@@ -105,27 +105,27 @@ class GetInfoFromLBK:
         if self.coin_data:
             self.coin_data["upgrade_time"] = upgrade_time
             self.coin_data["upgrade_time_dt"] = upgrade_time_dt
-            redis.hSet(name=self.name, key="lbk_db", value=self.coin_data)
+            await conn.hSet(name=self.name, key="lbk_db", value=self.coin_data)
             self.coin_data = {}
 
         if self.tick_data:
             self.tick_data["upgrade_time"] = upgrade_time
             self.tick_data["upgrade_time_dt"] = upgrade_time_dt
-            redis.hSet(name=self.name, key="lbk_price", value=self.tick_data)
+            await conn.hSet(name=self.name, key="lbk_price", value=self.tick_data)
             self.tick_data = {}
 
         if self.contract_data:
             self.contract_data["upgrade_time"] = upgrade_time
             self.contract_data["upgrade_time_dt"] = upgrade_time_dt
-            redis.hSet(name=self.name, key="contract_data", value=self.contract_data)
+            await conn.hSet(name=self.name, key="contract_data", value=self.contract_data)
             self.contract_data = {}
 
         if self.account_data:
             self.account_data["upgrade_time"] = upgrade_time
             self.account_data["upgrade_time_dt"] = upgrade_time_dt
-            redis.hSet(name=self.name, key="account_data", value=self.account_data)
+            await conn.hSet(name=self.name, key="account_data", value=self.account_data)
 
-        redis.close()
+        await conn.close()
 
     def main(self):
         self.loop.run_sync(self.on_first)
