@@ -168,6 +168,7 @@ class FollowTickTemplate(WebsocketClient):
         self.subscribe_key: str = ""
         self.is_connected: bool = False
 
+        self.SIGN: bool = False
         self.timing_task = TimingTask()
 
     async def init_by_exchange(self):
@@ -296,6 +297,8 @@ class FollowTickTemplate(WebsocketClient):
                 await self.cancel_order(item)
             else:
                 # await sleep(0.02)
+                if self.SIGN:
+                    return
                 await self.create_order(item)
 
     async def stop_stg(self):
@@ -338,10 +341,11 @@ class FollowTickTemplate(WebsocketClient):
             del bid, ask
         log.info(f"最近 2hour 成交额: {trade_amount}")
         if trade_amount > self.trade_limit:
+            self.SIGN = True
             if self.order_uuid2data:
                 await self.api.cancel_all_orders(symbol=self.symbol)
             await self.stop_stg()
-            log.info(f"最近 2hour 成交额大于 {self.trade_limit}: {trade_amount}, 暂停策略")
+            log.info(f"最近 2hour 成交额大于 {self.trade_limit}, 当前: {trade_amount}, 暂停策略")
         del ft, st, data, trans_lst, trade_amount
 
     def cal_volume(self, trade_type="bid") -> List[float]:
