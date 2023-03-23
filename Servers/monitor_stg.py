@@ -215,11 +215,13 @@ class MonitorSTG:
                 log.info(f"启动策略: {symbol}")
             elif todo == "stop":
                 await MyAioSubprocess(self.stop_cmd.format(symbol=symbol))
-                await sleep(0.01)
                 await conn.hDel(name=self.name_stg, key=f"fts_status_{symbol}")
                 await self.cancel_orders(symbol, conn)
                 log.info(f"关闭策略: {symbol}")
             else:
+                status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
+                if status == "STOPPED":
+                    continue
                 await MyAioSubprocess(self.restart_cmd.format(symbol=symbol))
                 log.info(f"重启策略: {symbol}")
             await conn.close()
