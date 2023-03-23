@@ -28,3 +28,5 @@ from .constants import (
 
 from .myWssObj import CoinsMonitor as CoinsMonitorObj
 from .myWssObj import ItemMethod, MsgItem
+
+from .stg_objects import Conf, Status, OrderData, TimingTask, TradeData

@@ -14,7 +14,6 @@ import random
 import numpy as np
 import pandas as pd
 from datetime import timedelta
-from dataclasses import dataclass
 from tornado.gen import sleep
 from tornado.queues import Queue
 from tornado.options import define, options
@@ -23,59 +22,10 @@ from aiohttp import ClientSession
 
 from Config import Configure, LBKUrl
 from Models import LbkRestApi
-from Utils import MyAioredis, MyDatetime, FreeDataclass, FrozenDataclass
+from Objects import Conf, Status, OrderData, TimingTask
+from Utils import MyAioredis, MyDatetime
 from Utils import WebsocketClient
 from Utils.myEncoder import MyEncoder
-
-
-@dataclass
-class Conf(FreeDataclass):
-    apiKey: str = ""
-    secretKey: str = ""
-    account: str = ""
-    team: str = ""
-    symbol: str = ""
-    step_gap: float = -1        # 步长
-    order_amount: int = -1      # 挂单量
-    order_nums: int = -1        # 档位
-    profit_rate: float = -1     # 点差
-
-
-@dataclass(frozen=True)
-class Status(FrozenDataclass):
-    NODEAL: str = "0"
-    PARTIAL: str = "1"
-    ALLDEAL: str = "2"
-    CANCELING: str = "3"
-    CANCELLED: str = "4"
-
-
-@dataclass
-class OrderData(FreeDataclass):
-    symbol: str
-    order_id: str = ""
-    customer_id: str = ""
-    type: str = ""
-    direction: str = ""
-    price: float = -1
-    amount: float = -1
-    traded: float = -1
-    status: Status = Status.NODEAL
-    datetime: int = None
-    gear: int = None                # 订单档位
-
-
-@dataclass
-class TimingTask(FreeDataclass):
-    refresh_subscribeKey: PeriodicCallback = None
-    tick_data: PeriodicCallback = None
-    price_data: PeriodicCallback = None
-    check_trade: PeriodicCallback = None
-    current_orders: PeriodicCallback = None
-    keep_set_status: PeriodicCallback = None
-
-    laying_orders: PeriodicCallback = None
-    random_orders: PeriodicCallback = None
 
 
 class FollowTickTemplate(WebsocketClient):
@@ -154,7 +104,9 @@ class FollowTickTemplate(WebsocketClient):
         self.volume_tick: int = -1      # 数量精度
 
         # redis
-        self.redis_pool: MyAioredis = options.redis_pool
+        self.redis_pool: MyAioredis = options.redis_pool  # db=0
+        self.redis_pool_trade = MyAioredis(1)
+        self.trade_channel: str = "TradeCacheLBK"
         self.name = f"{self.exchange.upper()}-DB"
         self.name_stg = f"{self.exchange.upper()}-STG-DB"
         self.key = "lbk_db"
@@ -206,7 +158,7 @@ class FollowTickTemplate(WebsocketClient):
     async def check_open_orders(self):
         log.info("检查是否有上次策略遗留挂单")
         resp: dict = await self.api.query_open_orders(symbol=self.symbol)
-        log.info(f"检查是否有上次策略遗留挂单: {resp}")
+        # log.info(f"检查是否有上次策略遗留挂单: {resp}")
         order_lst: List[dict] = resp.get("order_lst", [])
         if isinstance(order_lst, list):
             for order in order_lst:
@@ -322,7 +274,21 @@ class FollowTickTemplate(WebsocketClient):
         await conn.close()
         del conn
 
-    async def check_trade_amount(self):
+    async def check_trade_amount_from_redis(self):
+        conn = await self.redis_pool_trade.open(conn=True)
+        data: dict = await conn.hGet(f"{self.exchange.upper()}-TRADE-{self.symbol}", key="trade_size")
+        bid: float = data.get("bid_size", 0)
+        # ask: float = data.get("bid_size", 0)
+        log.info(f"最近 2hour 成交额: {bid}")
+        if bid > self.trade_limit:
+            self.SIGN = True
+            if self.order_uuid2data:
+                await self.api.cancel_all_orders(symbol=self.symbol)
+            await self.stop_stg()
+            log.info(f"最近 2hour 成交额大于 {self.trade_limit}, 当前: {bid}, 暂停策略")
+        del bid
+
+    async def check_trade_amount_from_rest(self):
         ft = MyDatetime.timestamp() - 60 + self.hr8_sec
         st = ft - self.hr2_sec
         data: dict = await self.api.query_trans_history(symbol=self.symbol, start_time=str(st), final_time=str(ft))
@@ -337,7 +303,8 @@ class FollowTickTemplate(WebsocketClient):
                     ask += trade["quoteQty"]
                 else:
                     bid += trade["quoteQty"]
-            trade_amount = bid - ask
+            # trade_amount = bid - ask
+            trade_amount = bid
             del bid, ask
         log.info(f"最近 2hour 成交额: {trade_amount}")
         if trade_amount > self.trade_limit:
@@ -670,6 +637,10 @@ class FollowTickTemplate(WebsocketClient):
                 else:
                     log.info(f"主动撤单: {order_data.type}, 原单: {order_data}")
 
+            conn = await self.redis_pool.open(conn=True)
+            await conn.publish(channel=self.trade_channel, msg=order_data.to_dict())
+            await conn.close()
+            del conn
             await self.on_status()
         del customer_id
 
@@ -714,7 +685,8 @@ class FollowTickTemplate(WebsocketClient):
             if not self.timing_task.tick_data.is_running():
                 self.timing_task.tick_data.start()
                 self.timing_task.price_data.start()
-                self.timing_task.check_trade.start()
+                self.timing_task.check_trade_by_rest.start()
+                self.timing_task.check_trade_by_redis.start()
                 self.timing_task.current_orders.start()
                 self.timing_task.laying_orders.start()
                 self.timing_task.random_orders.start()
@@ -726,7 +698,8 @@ class FollowTickTemplate(WebsocketClient):
         await self.init_by_exchange()       # 初始化Api
         await sleep(0.5)
         await self.check_open_orders()      # 撤销上次策略遗留挂单
-        await self.check_trade_amount()     #
+        await self.check_trade_amount_from_rest()     #
+        await self.check_trade_amount_from_redis()     #
         # subscribe_key
         log.info("连接 websocket")
         data = await self.api.query_subscribeKey()
@@ -751,8 +724,12 @@ class FollowTickTemplate(WebsocketClient):
             callback=self.get_price_from_redis, callback_time=timedelta(seconds=5), jitter=0.5
         )
         # 4
-        self.timing_task.check_trade = PeriodicCallback(
-            callback=self.check_trade_amount, callback_time=timedelta(seconds=30), jitter=0.5
+        self.timing_task.check_trade_by_rest = PeriodicCallback(
+            callback=self.check_trade_amount_from_rest, callback_time=timedelta(seconds=30), jitter=0.5
+        )
+        # 4
+        self.timing_task.check_trade_by_redis = PeriodicCallback(
+            callback=self.check_trade_amount_from_redis, callback_time=timedelta(seconds=30), jitter=0.5
         )
         # 5
         self.timing_task.current_orders = PeriodicCallback(
