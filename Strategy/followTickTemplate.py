@@ -298,7 +298,7 @@ class FollowTickTemplate(WebsocketClient):
             else:
                 # await sleep(0.02)
                 if self.SIGN:
-                    return
+                    continue
                 await self.create_order(item)
 
     async def stop_stg(self):
