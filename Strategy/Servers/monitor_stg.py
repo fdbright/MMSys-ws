@@ -17,7 +17,7 @@ from tornado.queues import Queue
 from tornado.ioloop import IOLoop, PeriodicCallback
 
 from Config import Configure
-from Utils import MyAioredis, MyAioSubprocess, MyDatetime
+from Utils import MyAioredis, MyAioSubprocess
 from Utils.myEncoder import MyEncoder
 from Models import LbkRestApi
 
@@ -34,7 +34,6 @@ class MonitorSTG:
         self.loop = IOLoop.current()
 
         self.update_cmd: str = "sudo supervisorctl update"
-        self.restart_cmd: str = "sudo supervisorctl restart ZFT_STG:{symbol}"
         self.start_cmd: str = "sudo supervisorctl start ZFT_STG:{symbol}"
         self.stop_cmd: str = "sudo supervisorctl stop ZFT_STG:{symbol}"
 
@@ -183,11 +182,12 @@ class MonitorSTG:
             if last_update_time == -1:
                 continue
             if int(self.loop.time() * 1000) - last_update_time > 150000:
-                await self.todo.put({"todo": "restart", "symbol": symbol})
+                await self.todo.put({"todo": "stop", "symbol": symbol})
+                await self.todo.put({"todo": "start", "symbol": symbol})
                 log.info(f"策略异常-更新时间, 执行重启: {symbol}")
                 continue
         await conn.close()
-        del conn, symbols
+        del conn
 
     async def sub2redis(self):
         conn = await self.redis_pool_this.open(conn=True)
@@ -203,27 +203,35 @@ class MonitorSTG:
     async def route(self):
         while True:
             item: dict = await self.todo.get()
-            # log.info(f"{type(item)}, {item}")
             symbol: str = item["symbol"]
             conn = await self.redis_pool_this.open(conn=True)
-            todo = item["todo"]
-            if todo == "start":
+            if item["todo"] == "start":
                 if self.server != self.default_server:
                     await sleep(2)
-                await conn.hSet(name=self.name_stg, key=f"fts_status_{symbol}", value={"status": "starting"})
-                await MyAioSubprocess(self.start_cmd.format(symbol=symbol))
-                log.info(f"启动策略: {symbol}")
-            elif todo == "stop":
-                await MyAioSubprocess(self.stop_cmd.format(symbol=symbol))
-                await sleep(0.01)
-                await conn.hDel(name=self.name_stg, key=f"fts_status_{symbol}")
-                await self.cancel_orders(symbol, conn)
-                log.info(f"关闭策略: {symbol}")
+                await self.start(symbol, conn)
             else:
-                await MyAioSubprocess(self.restart_cmd.format(symbol=symbol))
-                log.info(f"重启策略: {symbol}")
+                await self.stop(symbol, conn)
             await conn.close()
-            del item, symbol, conn, todo
+            del item, symbol, conn
+
+    async def start(self, symbol: str, conn):
+        # if symbol in self.running_stg:
+        #     return
+        await conn.hSet(name=self.name_stg, key=f"fts_status_{symbol}", value={"status": "starting"})
+        await MyAioSubprocess(self.start_cmd.format(symbol=symbol))
+        # self.running_stg.append(symbol)
+        log.info(f"启动策略: {symbol}")
+
+    async def stop(self, symbol: str, conn):
+        await MyAioSubprocess(self.stop_cmd.format(symbol=symbol))
+        await sleep(0.01)
+        await conn.hDel(name=self.name_stg, key=f"fts_status_{symbol}")
+        await self.cancel_orders(symbol, conn)
+        # try:
+        #     self.running_stg.remove(symbol)
+        # except ValueError:
+        #     pass
+        log.info(f"关闭策略: {symbol}")
 
     async def get_order_ids(self, conn, symbol) -> list:
         data = await conn.hGet(name=self.name_stg, key=f"order_ids_{symbol}")
@@ -241,7 +249,6 @@ class MonitorSTG:
         del conf, order_ids
 
     def run(self):
-        log.info(f"启动策略监控 {MyDatetime.dt2str(MyDatetime.add8hr())}")
         self.loop.run_sync(self.init_by_exchange)
         self.loop.run_sync(self.get_info_from_redis)
         self.loop.run_sync(self.check_if_stop)

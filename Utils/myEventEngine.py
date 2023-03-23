@@ -28,6 +28,7 @@ class MyEngine:
 
         self.session: ClientSession = ClientSession(trust_env=True)
 
+        self.is_connected: bool = False
         self._register_lst = []
 
     async def _task(self) -> None:
@@ -41,7 +42,8 @@ class MyEngine:
     async def _timer(self, interval: float):
         while True:
             await sleep(interval)
-            await self.add_task(self.on_timer)
+            if self.is_connected:
+                await self.add_task(self.on_timer)
 
     async def add_task(self, task: asyncio.coroutine, args: tuple = None) -> None:
         await self._queue.put([task, args])
@@ -52,7 +54,7 @@ class MyEngine:
     async def register(self, event: str, task: asyncio.coroutine):
         pass
 
-    def start(self, interval: float = 0) -> None:
+    def start(self, interval: float = None) -> None:
         self.loop.add_callback(self._task)
         if interval:
             self.loop.add_callback(lambda: self._timer(interval))
@@ -124,8 +126,8 @@ class WebsocketClient:
             try:
                 self._ws = await self.session.ws_connect(url=url, ssl=False)
                 await self.on_connected()
+                self.is_connected = True
                 async for msg in self._ws:  # type: WSMessage
-                    self.is_connected = True
                     try:
                         item: dict = msg.json(loads=ujson.loads)
                     except Exception as e:
@@ -133,6 +135,9 @@ class WebsocketClient:
                     else:
                         await self.on_packet(item)
                 self._ws = None
+                self.is_connected = False
+                log.warning(f"websocket 断连, 即将重连")
+                await sleep(0.2)
             except Exception as e:
                 log.warning(f"websocket 异常: {e}, 即将重连")
                 self.is_connected = False

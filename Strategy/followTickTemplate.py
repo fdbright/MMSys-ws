@@ -13,16 +13,18 @@ import os
 import random
 import numpy as np
 import pandas as pd
+from datetime import timedelta
 from dataclasses import dataclass
 from tornado.gen import sleep
 from tornado.queues import Queue
 from tornado.options import define, options
+from tornado.ioloop import IOLoop, PeriodicCallback
 from aiohttp import ClientSession
 
 from Config import Configure, LBKUrl
 from Models import LbkRestApi
 from Utils import MyAioredis, MyDatetime, FreeDataclass, FrozenDataclass
-from Utils import MyEngine, WebsocketClient
+from Utils import WebsocketClient
 from Utils.myEncoder import MyEncoder
 
 
@@ -44,7 +46,8 @@ class Status(FrozenDataclass):
     NODEAL: str = "0"
     PARTIAL: str = "1"
     ALLDEAL: str = "2"
-    CANCELLED: str = "3"
+    CANCELING: str = "3"
+    CANCELLED: str = "4"
 
 
 @dataclass
@@ -62,7 +65,20 @@ class OrderData(FreeDataclass):
     gear: int = None                # 订单档位
 
 
-class FollowTickTemplate(MyEngine, WebsocketClient):
+@dataclass
+class TimingTask(FreeDataclass):
+    refresh_subscribeKey: PeriodicCallback = None
+    tick_data: PeriodicCallback = None
+    price_data: PeriodicCallback = None
+    check_trade: PeriodicCallback = None
+    current_orders: PeriodicCallback = None
+    keep_set_status: PeriodicCallback = None
+
+    laying_orders: PeriodicCallback = None
+    random_orders: PeriodicCallback = None
+
+
+class FollowTickTemplate(WebsocketClient):
 
     def __init__(self):
         super().__init__()
@@ -71,6 +87,10 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         self.account: str = ""
         self.exchange: str = options.exchange.lower()
         self.server: str = options.server
+
+        # loop
+        self.loop = IOLoop.current()
+        self.session: ClientSession = None
 
         # log
         self.fp = os.path.join(Configure.LOG_PATH, "stg", f"stg_{self.symbol}.log")
@@ -93,6 +113,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         self.time_count: int = 0
         self.hr1_sec: int = 50 * 60
         self.hr2_sec: int = 2 * 60 * 60
+        self.hr8_sec: int = 8 * 60 * 60
 
         self.temp_uuid: dict = {}
         self.coin_balance: float = -1  # 币余额
@@ -107,8 +128,11 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             "0": Status.NODEAL,
             "1": Status.PARTIAL,
             "2": Status.ALLDEAL,
-            "4": Status.CANCELLED,
+            "4": Status.CANCELING,
         }
+
+        self.empty_coin: bool = False   # 币数量不足, 10014
+        self.empty_base: bool = False   # U数量不足, 10016
 
         self.conf: Conf = None
         self.trade_limit: int = 1000
@@ -144,11 +168,12 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         self.subscribe_key: str = ""
         self.is_connected: bool = False
 
-        self.SIGN: bool = False     # 是否暂停策略
+        self.timing_task = TimingTask()
 
     async def init_by_exchange(self):
+        self.session = ClientSession(trust_env=True)
         if self.exchange == "lbk":
-            self.api = LbkRestApi(htp_client=ClientSession(trust_env=True))
+            self.api = LbkRestApi(htp_client=self.session)
             self.wss_url = LBKUrl.HOST.trade_wss
         else:
             pass
@@ -180,16 +205,18 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
     async def check_open_orders(self):
         log.info("检查是否有上次策略遗留挂单")
         resp: dict = await self.api.query_open_orders(symbol=self.symbol)
+        log.info(f"检查是否有上次策略遗留挂单: {resp}")
         order_lst: List[dict] = resp.get("order_lst", [])
-        for order in order_lst:
-            custom_id: str = order["custom_id"]
-            if custom_id.startswith(self.custom):
-                order_id = order["order_id"]
-                if order["order_id"] not in self.current_order_ids:
-                    await self.api.cancel_order(symbol=self.symbol, order_id=order_id)
-                    log.info(f"上次策略遗留挂单, 执行撤单, custom_id: {custom_id}, order_id: {order_id}")
-                del order_id
-            del custom_id
+        if isinstance(order_lst, list):
+            for order in order_lst:
+                custom_id: str = order["custom_id"]
+                if custom_id.startswith(self.custom):
+                    order_id = order["order_id"]
+                    if order["order_id"] not in self.current_order_ids:
+                        await self.api.cancel_order(symbol=self.symbol, order_id=order_id)
+                        log.info(f"上次策略遗留挂单, 执行撤单, custom_id: {custom_id}, order_id: {order_id}")
+                    del order_id
+                del custom_id
         del resp, order_lst
 
     async def get_tick_from_redis(self):
@@ -228,10 +255,12 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         await conn.close()
         del conn, data
         log.info("获取 price_data")
+        log.info(f"is_connected: {self.is_connected}")
 
     async def cancel_order(self, custom_id: str):
         order_data = self.order_uuid2data.pop(custom_id)
         resp = await self.api.cancel_order(symbol=self.symbol, order_id=order_data.order_id)
+        log.info(f"cancel_order: {resp}")
         if resp.get("result", False):
             try:
                 self.current_order_ids.remove(order_data.order_id)
@@ -250,6 +279,12 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             custom_id=custom_id,
             conf=self.order_conf
         )
+        log.info(f"create_order: {resp}")
+        # error_code = resp.get("error", None)
+        # if error_code == 10014:
+        #     self.empty_coin = True
+        # elif error_code == 10016:
+        #     self.empty_base = True
         if resp.get("result", False):
             self.current_order_ids.append(resp.get("order_id"))
         del custom_id, resp
@@ -258,40 +293,56 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         while True:
             item: Union[str, OrderData] = await self.order_todo.get()
             if isinstance(item, str):
-                await self.add_task(self.cancel_order, args=(item,))
+                await self.cancel_order(item)
             else:
-                await self.add_task(self.create_order, args=(item,))
+                # await sleep(0.02)
+                await self.create_order(item)
+
+    async def stop_stg(self):
+        conn = await self.redis_pool.open(conn=True)
+        if self.conf.team == "jx":
+            await conn.publish(
+                channel=Configure.REDIS.send_mail_channel,
+                msg={
+                    "title": f"策略异常推送: {self.symbol.upper()}",
+                    "content": f"""
+                    <p>最近2小时成交额超限({self.trade_limit})</p>
+                    <p>请人工介入</p>
+                    """,
+                    "receivers": ["junxiang@lbk.one", "bingui.qin@lbk.one", "zhiwei.chen@lbk.one", "chao.lu@lbk.one"]
+                }
+            )
+        await conn.publish(
+            channel=Configure.REDIS.stg_ws_channel.format(exchange=self.exchange.upper(), server=self.server),
+            msg={"todo": "stop", "symbol": self.symbol}
+        )
+        await conn.close()
+        del conn
 
     async def check_trade_amount(self):
-        ft = MyDatetime.timestamp() - 60
+        ft = MyDatetime.timestamp() - 60 + self.hr8_sec
         st = ft - self.hr2_sec
-        data = await self.api.query_trans_history(symbol=self.symbol, start_time=str(st), final_time=str(ft))
-        try:
+        data: dict = await self.api.query_trans_history(symbol=self.symbol, start_time=str(st), final_time=str(ft))
+        trans_lst: list = data.get("trans_lst", [])
+        if isinstance(trans_lst, str):
+            log.info(f"最近 2hour 成交查询: {trans_lst}")
+            return
+        else:
             bid, ask = 0, 0
-            for trade in data["trans_lst"]:
+            for trade in trans_lst:  # type: dict
                 if trade["type"] == "sell":
                     ask += trade["quoteQty"]
                 else:
                     bid += trade["quoteQty"]
             trade_amount = bid - ask
-        except Exception:
-            trade_amount = 0
-        finally:
             del bid, ask
+        log.info(f"最近 2hour 成交额: {trade_amount}")
         if trade_amount > self.trade_limit:
-            self.SIGN = True
             if self.order_uuid2data:
-                self.order_uuid2data = {}
-                self.order_gear2data = {}
                 await self.api.cancel_all_orders(symbol=self.symbol)
+            await self.stop_stg()
             log.info(f"最近 2hour 成交额大于 {self.trade_limit}: {trade_amount}, 暂停策略")
-        else:
-            if self.SIGN:
-                self.SIGN = False
-                self.time_count = 1
-                self.first_time = True
-                log.info(f"最近 2hour 成交额小于 {self.trade_limit}: {trade_amount}, 重启策略")
-        del ft, st, data, trade_amount
+        del ft, st, data, trans_lst, trade_amount
 
     def cal_volume(self, trade_type="bid") -> List[float]:
         """计算每档下单的usdt"""
@@ -433,6 +484,8 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         del conn
 
     async def on_status(self, first_time: bool = False):
+        if not self.is_connected:
+            return
         conn = await self.redis_pool.open(conn=True)
         now = MyDatetime.today()
         if first_time:
@@ -442,102 +495,115 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         await conn.hSet(name=self.name_stg, key=f"fts_status_{self.symbol}", value=self.status_value)
         await conn.close()
         del conn, now
+        log.info(f"更新策略状态: {self.status_value['upgrade_time_dt']}")
 
-    async def on_timer(self):
-        log.info(f"ws_status: {self.is_connected}")
+    def check_if_empty(self, orderbook: dict):
+        log.info(f"资金检查")
+        bid, bid_sign, bid_gear = 0, False, 0
+        ask, ask_sign, ask_gear = 0, False, 0
+        for index in range(1, self.conf.order_nums + 1):
+            if bid_sign:
+                orderbook.pop(index)
+                continue
+            pv = orderbook[index]
+            bid += pv["price"] * pv["volume"]
+            if bid >= self.base_balance:
+                bid_sign = True
+                bid_gear = index
+        for index in range(1, self.conf.order_nums + 1):
+            if ask_sign:
+                orderbook.pop(-index)
+                continue
+            pv = orderbook[-index]
+            ask += pv["volume"]
+            if ask >= self.coin_balance:
+                ask_sign = True
+                ask_gear = index
+        if bid_sign or ask_sign:
+            print(bid_gear, ask_gear)
+            gear = self.conf.order_nums + 1
+            if bid_gear and ask_gear == 0:
+                gear = bid_gear
+            if bid_gear == 0 and ask_gear:
+                gear = ask_gear
+            if bid_gear != 0 and ask_gear != 0:
+                gear = min([bid_gear, ask_gear])
+            orderbook.pop(gear - 1, None)
+            orderbook.pop(-(gear - 1), None)
+            self.conf.order_nums = gear - 2
+            log.info(f"资金不足, 更新 order_nums :{self.conf.order_nums}")
+            del gear
+        else:
+            log.info(f"资金足够, 正常铺单")
+        del bid, bid_sign, bid_gear, ask, ask_sign, ask_gear
+        return orderbook
+
+    async def laying_orders(self):
+        """铺单"""
         if not self.is_connected:
             return
-        self.time_count += 1
-
-        # 首次执行, 更新状态
-        if self.time_count == 1:
-            await self.on_status(first_time=True)
-            await self.get_tick_from_redis()
-            await self.get_price_from_redis()
-
-        if self.time_count % self.hr1_sec == 0:
-            await self.api.refresh_subscribeKey(self.subscribe_key)
-
-        if self.time_count % 30 == 0:
-            await self.check_trade_amount()
-        if self.SIGN:
+        if not self.coin_balance:
+            return
+        if self.base_balance <= 700:
+            self.conf.profit_rate *= 2
+        elif self.base_balance <= 300:
+            self.conf.profit_rate *= 4
+        if not self.price_tick:
+            return
+        self.thisPrice = self.dex_price if self.dex_price not in [-1, 0] else self.cmc_price
+        if self.thisPrice == -1:
             return
 
-        # 更新 order_ids, 1sec
-        await self.on_current_orders()
-
-        # 更新 状态, 1min
-        if self.time_count % 60 == 0:
-            await self.on_status()
-
-        # 更新 ticks, 5 min
-        if self.time_count % 300 == 0:
-            await self.get_tick_from_redis()
-
-        # 更新 price, avg, 5sec
-        if self.time_count % 5 == 0:
-            await self.get_price_from_redis()
-
-        # 第一次, 10sec
-        if self.time_count == 1 or self.time_count % 10 == 0:
-            if not self.coin_balance:
-                return
-            if self.base_balance <= 700:
-                self.conf.profit_rate *= 2
-            elif self.base_balance <= 300:
-                self.conf.profit_rate *= 4
-            if not self.price_tick:
-                return
-            self.thisPrice = self.dex_price if self.dex_price not in [-1, 0] else self.cmc_price
-            if self.thisPrice == -1:
-                return
-
-            # 首次执行, 继续进行, 并赋值上次价格
-            if self.first_time:
-                log.info(f"{self.symbol.upper()}, 首次启动, 执行铺单")
-                self.first_time = False
-                self.lastPrice = self.thisPrice
-                self.this_orderbook = self.cal_O_V(price=self.thisPrice)
-                log.info(f"首次订单本: {self.this_orderbook}")
-                for k, v in self.this_orderbook.items():  # 从内向外挂单
-                    trade_type = "buy" if k > 0 else "sell"
-                    od = OrderData(
-                        symbol=self.symbol,
-                        type=trade_type,
-                        price=v["price"],
-                        amount=v["volume"],
-                        gear=k
-                    )
-                    self.order_gear2data[k] = od
-                    await self.order_todo.put(od)
-            # 非首次执行
-            else:
-                if self.thisPrice == self.lastPrice:  # 若价格无变化，则不进行处理
-                    log.info(f"{self.symbol.upper()}, 价格暂无变化")
-                    return
-                else:
-                    log.info(f"价格出现波动, 上次: {self.lastPrice}, 本次: {self.thisPrice}")
-                    self.this_orderbook = self.cal_O_V(price=self.thisPrice)
-                    to_change = self.cal_deviation()
-                    if to_change:
-                        log.info(f"价格波动较大, 执行挂撤")
-                        await self.cal_change_orders(to_change)
-                    else:
-                        pra = (self.this_orderbook[1]["price"] - self.order_gear2data[1].price) // self.conf.profit_rate
-                        log.info(f"价格波动较大, {pra}")
-                        if pra == 0:
-                            log.info(f"{self.symbol.upper()}, 价格波动较小, 不进行操作")
-                        else:
-                            if pra > 0:
-                                this_change = [i for i in range(1, round(pra) + 1)]
-                            else:
-                                this_change = [-i for i in range(round(abs(pra)), 0, -1)]
-                            await self.cal_change_orders(this_change)
-            self.last_orderbook = self.this_orderbook.copy()
-            self.this_orderbook = {}
+        # 首次执行, 继续进行, 并赋值上次价格
+        if self.first_time:
+            log.info(f"{self.symbol.upper()}, 首次启动, 执行铺单")
+            self.first_time = False
             self.lastPrice = self.thisPrice
+            self.this_orderbook = self.cal_O_V(price=self.thisPrice)
+            log.info(f"首次订单本: {self.this_orderbook}")
+            for k, v in self.this_orderbook.items():  # 从内向外挂单
+                trade_type = "buy" if k > 0 else "sell"
+                od = OrderData(
+                    symbol=self.symbol,
+                    type=trade_type,
+                    price=v["price"],
+                    amount=v["volume"],
+                    gear=k
+                )
+                self.order_gear2data[k] = od
+                await self.order_todo.put(od)
+        # 非首次执行
+        else:
+            if self.thisPrice == self.lastPrice:  # 若价格无变化，则不进行处理
+                log.info(f"{self.symbol.upper()}, 价格暂无变化")
+                return
+            else:
+                log.info(f"价格出现波动, 上次: {self.lastPrice}, 本次: {self.thisPrice}")
+                self.this_orderbook = self.cal_O_V(price=self.thisPrice)
+                to_change = self.cal_deviation()
+                if to_change:
+                    log.info(f"价格波动较大, 执行挂撤")
+                    await self.cal_change_orders(to_change)
+                else:
+                    pra = (self.this_orderbook[1]["price"] - self.order_gear2data[1].price) // self.conf.profit_rate
+                    log.info(f"价格波动较大, {pra}")
+                    if pra == 0:
+                        log.info(f"{self.symbol.upper()}, 价格波动较小, 不进行操作")
+                    else:
+                        if pra > 0:
+                            this_change = [i for i in range(1, round(pra) + 1)]
+                        else:
+                            this_change = [-i for i in range(round(abs(pra)), 0, -1)]
+                        await self.cal_change_orders(this_change)
 
-        # 定期随机挂撤, 15sec
+        self.last_orderbook = self.this_orderbook.copy()
+        self.this_orderbook = {}
+        self.lastPrice = self.thisPrice
+
+    async def random_orders(self):
+        """定期随机挂撤"""
+        if not self.is_connected:
+            return
         if self.time_count % 15 == 0:
             k_bid, k_ask = random.randint(-10, -1), random.randint(1, 10)
             odd_bid: OrderData = self.order_gear2data.get(k_bid, None)
@@ -565,8 +631,12 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             order_data.traded = float(data["accAmt"]) * float(data["avgPrice"])
             order_data.status = self.order_status[str(data["orderStatus"])]
             order_data.datetime = int(data["updateTime"])
+
+            # 更新订单本
             self.order_uuid2data[order_data.order_id] = order_data
             self.order_gear2data[order_data.gear] = order_data
+
+            # log.info(f"order_data: {order_data}")
 
             # 完全成交单, 进行补单
             if order_data.status == Status.ALLDEAL:
@@ -583,19 +653,24 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
                     log.info(f"补单: {order_data}")
                 log.info(f"全部成交单: {order_data.type}, 原单: {order_data}")
 
-            # 策略执行的随机撤单
             if order_data.status == Status.CANCELLED:
+                # 策略执行的随机撤单
                 if order_data.order_id in self.temp_uuid.keys():
                     await self.order_todo.put(order_data)
                     try:
                         del self.temp_uuid[order_data.order_id]
                     except KeyError:
                         pass
+                    log.info(f"随机撤单: {order_data.type}, 原单: {order_data}")
+                # 策略执行的主动撤单
+                else:
+                    log.info(f"主动撤单: {order_data.type}, 原单: {order_data}")
 
+            await self.on_status()
         del customer_id
 
     async def on_packet(self, item: dict):
-        log.info(f"packet: {item}")
+        # log.info(f"packet: {item}")
         if item.get("action", None) == "ping":
             await self.on_ping(item)
             return
@@ -610,6 +685,7 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
         del _type
 
     async def on_ping(self, data: dict):
+        log.info(f"ping: {data}")
         await self.send_packet({"action": "pong", "pong": data["ping"]})
 
     async def on_connected(self):
@@ -619,30 +695,90 @@ class FollowTickTemplate(MyEngine, WebsocketClient):
             "subscribeKey": self.subscribe_key,
             "pair": self.symbol
         })
-        await self.api.refresh_subscribeKey(self.subscribe_key)
+
+    async def on_first(self):
+        while True:
+            if not self.is_connected:
+                await sleep(1)
+                continue
+            log.info("首次执行")
+            await self.on_status(first_time=True)
+            await self.get_tick_from_redis()
+            await self.get_price_from_redis()
+            await self.laying_orders()
+
+            if not self.timing_task.tick_data.is_running():
+                self.timing_task.tick_data.start()
+                self.timing_task.price_data.start()
+                self.timing_task.check_trade.start()
+                self.timing_task.current_orders.start()
+                self.timing_task.laying_orders.start()
+                self.timing_task.random_orders.start()
+                # self.timing_task.keep_set_status.start()
+            break
 
     async def initialize(self):
         await self.get_conf_from_redis()    # 获取币对&策略配置
         await self.init_by_exchange()       # 初始化Api
         await sleep(0.5)
         await self.check_open_orders()      # 撤销上次策略遗留挂单
+        await self.check_trade_amount()     #
         # subscribe_key
+        log.info("连接 websocket")
         data = await self.api.query_subscribeKey()
         log.info(f"subscribe_key: {data}")
         self.subscribe_key = data.get("key", None)
         del data
-        await self.get_tick_from_redis()
-        await self.get_price_from_redis()
+        await self.register_callback()
+        self.timing_task.refresh_subscribeKey.start()
+
+    async def register_callback(self):
+        # 1
+        self.timing_task.refresh_subscribeKey = PeriodicCallback(
+            callback=lambda: self.api.refresh_subscribeKey(self.subscribe_key), callback_time=timedelta(minutes=50),
+            jitter=0.1
+        )
+        # 2
+        self.timing_task.tick_data = PeriodicCallback(
+            callback=self.get_tick_from_redis, callback_time=timedelta(minutes=5), jitter=0.5
+        )
+        # 3
+        self.timing_task.price_data = PeriodicCallback(
+            callback=self.get_price_from_redis, callback_time=timedelta(seconds=5), jitter=0.5
+        )
+        # 4
+        self.timing_task.check_trade = PeriodicCallback(
+            callback=self.check_trade_amount, callback_time=timedelta(seconds=30), jitter=0.5
+        )
+        # 5
+        self.timing_task.current_orders = PeriodicCallback(
+            callback=self.on_current_orders, callback_time=timedelta(seconds=1), jitter=0.5
+        )
+        # 6
+        self.timing_task.laying_orders = PeriodicCallback(
+            callback=self.laying_orders, callback_time=timedelta(seconds=10), jitter=0.5
+        )
+        # 7
+        self.timing_task.random_orders = PeriodicCallback(
+            callback=self.random_orders, callback_time=timedelta(seconds=15), jitter=0.5
+        )
+        # 8
+        self.timing_task.keep_set_status = PeriodicCallback(
+            callback=self.on_status, callback_time=timedelta(minutes=1), jitter=0.5
+        )
 
     def run(self):
+        log.info("\n\n\n\n\n\n")
+        log.info(f"启动策略: {MyDatetime.dt2str(MyDatetime.add8hr())}")
         self.loop.run_sync(self.initialize)
+        self.loop.add_callback(self.on_first)
         self.loop.add_callback(self.keep_handle_orders)
         self.loop.add_callback(lambda: self.subscribe(self.wss_url))
-        self.start(interval=1)
+        self.loop.start()
 
 
 if __name__ == '__main__':
-    define(name="symbol", type=str, default="apollo_usdt")
+    define(name="symbol", type=str, default="artm_usdt")
     define(name="exchange", type=str, default="lbk")
     define(name="server", type=str, default="main")
 
