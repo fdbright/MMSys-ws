@@ -48,11 +48,10 @@ class LbkWssData(WebsocketClient):
             data: dict = ujson.loads(item[-1])
             pair: str = data["pair"]
             action: str = data["action"]
-            if action == "subscribe":
-                await self.send_packet(data)
-            else:
-                await self.send_packet(data)
+            await self.send_packet(data)
+            if action == "unsubscribe":
                 await conn.hDel(name=self.redis_name, key=self.depth_data_key.format(symbol=pair))
+            del item, data, pair, action
 
     async def on_packet(self, data: dict):
         if data.get("action", None) == "ping":
@@ -61,8 +60,7 @@ class LbkWssData(WebsocketClient):
         _type: str = data.get("type", None)
         if _type == "depth":
             await self.on_depth(data)
-        else:
-            pass
+        del _type
 
     async def on_ping(self, data: dict):
         await self.send_packet(data={"action": "pong", "pong": data["ping"]})
@@ -87,6 +85,7 @@ class LbkWssData(WebsocketClient):
             value=dr.to_dict(),
         )
         await conn.close()
+        del conn, pair, depth, dr
 
     def run(self):
         self.loop.add_callback(lambda: self.subscribe(url=LBKUrl.HOST.data_wss))
