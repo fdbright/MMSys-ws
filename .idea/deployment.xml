@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" serverName="ec2-user@13.229.166.133:22 key" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
-      <paths name="ec2-user@13.229.166.133:22 key">
+      <paths name="ec2-user@13.229.166.133">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/ec2-user/MMSys-ws" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="ec2-user@18.141.5.148">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

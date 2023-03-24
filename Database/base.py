@@ -12,8 +12,8 @@ from Config import Configure
 
 db = PooledMySQLDatabase(
     Configure.MYSQL.database,
-    max_connections=300,     # 最大连接数
-    stale_timeout=60,        # 秒
+    max_connections=500,     # 最大连接数
+    stale_timeout=30,        # 秒
     user=Configure.MYSQL.user,
     host=Configure.MYSQL.host,
     port=Configure.MYSQL.port,

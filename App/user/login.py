@@ -16,6 +16,7 @@ from Utils.myEncoder import MyEncoder
 from Utils import MyDatetime
 from Models import OrmUser
 from Objects import UserObj
+from Database import db
 
 
 class Login(MyHtpMethod):
@@ -23,7 +24,9 @@ class Login(MyHtpMethod):
     async def get(self):
         """获取验证码"""
         username: str = self.get_argument("username")
+        db.connect(reuse_if_open=True)
         userinfo: UserObj = OrmUser.search.fromUserTb.one(username)
+        db.close()
         # print(userinfo)
         if not userinfo:
             code = -1
@@ -57,7 +60,9 @@ class Login(MyHtpMethod):
         if verify_code != str(code):
             self.after_request(code=-1, msg="验证码错误", action="login")
             return
+        db.connect(reuse_if_open=True)
         userinfo: UserObj = OrmUser.search.fromUserTb.one(username, pwd=True, perm=True)
+        db.close()
         if not userinfo:
             self.after_request(code=-1, msg="账户不存在", action="login")
             return
@@ -77,7 +82,9 @@ class Login(MyHtpMethod):
         """修改密码"""
         payload = self.get_payload()
         password: str = payload.get("password", None)
+        db.connect(reuse_if_open=True)
         data = OrmUser.update.toUserTb.password(self.current_user.username, password)
+        db.close()
         self.after_request(code=1 if data else -1, msg="修改密码", action="edit_pd", data=data)
 
     async def delete(self):

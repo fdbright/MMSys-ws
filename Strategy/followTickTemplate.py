@@ -291,7 +291,9 @@ class FollowTickTemplate(WebsocketClient):
     async def check_trade_amount_from_rest(self):
         ft = MyDatetime.timestamp() - 60 + self.hr8_sec
         st = ft - self.hr2_sec
-        data: dict = await self.api.query_trans_history(symbol=self.symbol, start_time=str(st), final_time=str(ft))
+        data: dict = await self.api.query_trans_history(
+            symbol=self.symbol, start_time=str(st), final_time=str(ft), limit=1000
+        )
         trans_lst: list = data.get("trans_lst", [])
         if isinstance(trans_lst, str):
             log.info(f"最近 2hour 成交查询: {trans_lst}")
