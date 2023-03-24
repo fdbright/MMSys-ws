@@ -8,31 +8,48 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from loguru import logger as log
 
 import ujson
+from tornado.queues import Queue
+from tornado.ioloop import IOLoop
 
 from Config import Configure
-from Utils import MyEmail, MyRedis
+from Utils import MyEmail, MyAioredis
 
 
 class SendMail:
 
     def __init__(self):
-        self.redis_conn = MyRedis(db=0).open(conn=True)
+
+        # loop
+        self.loop = IOLoop.current()
+        self._queue = Queue()
+        self.redis_pool = MyAioredis(db=0)
+
         self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
         self.channel = Configure.REDIS.send_mail_channel
 
-    def run(self):
-        pub = self.redis_conn.subscribe(self.channel)
+    async def subscribe(self):
+        conn = await self.redis_pool.open(conn=True)
+        pub = await conn.subscribe(channel=self.channel)
         while True:
-            item: list = pub.parse_response(block=True)
+            item: list = await pub.parse_response(block=True)
             # print(type(item), item)
             if item[0] != "message":
                 continue
-            data: dict = ujson.loads(item[-1])
-            self.me.init_msg(receivers=data["receivers"], sub_title=data["title"], sub_content=data["content"])
+            await self._queue.put(ujson.loads(item[-1]))
+
+    async def send_mail(self):
+        while True:
+            item: dict = await self._queue.get()
+            self.me.init_msg(receivers=item["receivers"], sub_title=item["title"], sub_content=item["content"])
             self.me.send_mail()
+
+    def run(self):
+        self.loop.add_callback(self.send_mail)
+        self.loop.add_callback(self.subscribe)
+
+        self.loop.start()
 
 
 if __name__ == '__main__':
-    sm = SendMail()
-    sm.run()
+    SendMail().run()
 
