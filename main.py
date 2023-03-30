@@ -12,7 +12,7 @@ import tornado.ioloop
 import tornado.httpserver
 from tornado.options import define, options
 
-from App import Login
+from App import Login, ReportRest
 from Route import V1MainRoute
 from Utils import MyAioredis
 from Config import Configure
@@ -26,6 +26,7 @@ log.add(Configure.LOG_MAIN, retention="2 days", encoding="utf-8")
 urls = [
     ("/app/wss/v1", V1MainRoute),
     ("/app/htp/v1/user/login", Login),
+    ("/app/htp/v1/report", ReportRest),
 ]
 app = tornado.web.Application(
     urls,

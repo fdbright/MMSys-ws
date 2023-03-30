@@ -10,7 +10,7 @@ from loguru import logger as log
 from dataclasses import dataclass
 
 from Utils import FreeDataclass
-from Webs import MyActionTemplate
+from Webs import MyActionTemplate, MyHtpMethod
 from Config import Configure
 
 
@@ -35,6 +35,21 @@ class Report(MyActionTemplate):
             self.after_request(code=1, msg="上传成功", action=item.channel)
         else:
             self.after_request(code=-1, msg="上传失败", action=item.channel)
+
+
+class ReportRest(MyHtpMethod):
+
+    async def post(self):
+        """更新日报文件"""
+        file_dict = self.request.files
+        file_meta = file_dict.get("new_file", None)  # 提取表单中‘name’为‘file’的文件元数据
+        if file_meta:
+            file = file_meta[0]
+            with open(Configure.DAILY_REPORT_PATH, "wb") as f:
+                f.write(file.body)
+            self.after_request(code=1, msg="上传成功")
+        else:
+            self.after_request(code=-1, msg="上传失败")
 
 
 if __name__ == '__main__':

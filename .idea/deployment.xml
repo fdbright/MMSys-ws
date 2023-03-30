@@ -3,17 +3,17 @@
   <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
-      <paths name="ec2-user@13.229.166.133:22 key">
+      <paths name="ec2-user@13.229.166.133">
         <serverdata>
           <mappings>
             <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="ec2-user@18.141.5.148:22">
+      <paths name="ec2-user@18.141.5.148">
         <serverdata>
           <mappings>
-            <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" />
+            <mapping deploy="/MMSys-ws" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
