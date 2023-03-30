@@ -58,7 +58,9 @@ class MyHtpMethod(RequestHandler):
     async def prepare(self):
         log.info(f"请求开始, method: {self.request.method}, path: {self.request.path}")
         conn = await options.redis_pool.open(conn=True)
-        if "undefined" in self.request.query or "undefined" in self.request.body.decode():
+        # log.info(self.request.query)
+        # log.info(self.request.body)
+        if "undefined" in self.request.query:
             self.after_request(code=-1, msg="参数异常")
             return
         try:

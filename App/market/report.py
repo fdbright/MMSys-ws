@@ -42,7 +42,8 @@ class ReportRest(MyHtpMethod):
     async def post(self):
         """更新日报文件"""
         file_dict = self.request.files
-        file_meta = file_dict.get("new_file", None)  # 提取表单中‘name’为‘file’的文件元数据
+        file_meta = file_dict.get("file", None)  # 提取表单中‘name’为‘file’的文件元数据
+        # log.info(file_meta)
         if file_meta:
             file = file_meta[0]
             with open(Configure.DAILY_REPORT_PATH, "wb") as f:
