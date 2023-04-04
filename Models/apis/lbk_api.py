@@ -217,7 +217,7 @@ class LbkRestApi(MyApiTemplate):
             orders = resp.get("data", {}).get("orders", [])
             data = OpenOrderReturn(
                 exchange=self.__exchange,
-                order_lst=list(map(self.__init4orders, orders)) if orders else "暂无挂单",
+                order_lst=list(map(self.__init4orders, orders)) if orders else [],
             )
         return data.to_dict()
 
