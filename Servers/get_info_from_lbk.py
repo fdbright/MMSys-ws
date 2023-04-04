@@ -41,7 +41,8 @@ class GetInfoFromLBK:
         self.accounts: List[AccountObj] = []
 
         # redis_data
-        self.coin_data: dict = {}
+        self.last_coin_data: dict = {}
+        self.this_coin_data: dict = {}
         self.tick_data: dict = {}
         self.account_data: dict = {}
         self.account_info: dict = {}
@@ -49,6 +50,7 @@ class GetInfoFromLBK:
 
         # loop
         self.loop = IOLoop.current()
+        self.first_time: bool = True
 
     async def init_api(self):
         self.api = LbkRestApi(ClientSession(trust_env=True))
@@ -60,18 +62,18 @@ class GetInfoFromLBK:
 
     async def on_coin(self):
         db.connect(reuse_if_open=True)
-        self.coin_data = OrmMarket.search.fromCoinsTb.all4redis(exchange=self.exchange)
+        self.this_coin_data: dict = OrmMarket.search.fromCoinsTb.all4redis(exchange=self.exchange)
         db.close()
+        if not self.first_time:
+            if self.this_coin_data != self.last_coin_data:
+                await self.on_contract()
+        else:
+            self.first_time = False
+        self.last_coin_data = self.this_coin_data
 
     async def on_tick(self):
         data = await self.api.query_tick()
         self.tick_data = data["ticker"]
-
-    async def on_tick2(self):
-        while True:
-            data = await self.api.query_tick()
-            self.tick_data = data["ticker"]
-            time.sleep(3)
 
     async def on_contract(self):
         data = await self.api.query_contract()
@@ -102,11 +104,11 @@ class GetInfoFromLBK:
         upgrade_time = MyDatetime.dt2ts(dt, thousand=True)
         upgrade_time_dt = MyDatetime.dt2str(dt)
 
-        if self.coin_data:
-            self.coin_data["upgrade_time"] = upgrade_time
-            self.coin_data["upgrade_time_dt"] = upgrade_time_dt
-            await conn.hSet(name=self.name, key="lbk_db", value=self.coin_data)
-            self.coin_data = {}
+        if self.this_coin_data:
+            self.this_coin_data["upgrade_time"] = upgrade_time
+            self.this_coin_data["upgrade_time_dt"] = upgrade_time_dt
+            await conn.hSet(name=self.name, key="lbk_db", value=self.this_coin_data)
+            self.this_coin_data = {}
 
         if self.tick_data:
             self.tick_data["upgrade_time"] = upgrade_time
@@ -126,14 +128,15 @@ class GetInfoFromLBK:
             await conn.hSet(name=self.name, key="account_data", value=self.account_data)
 
         await conn.close()
+        del conn, dt, upgrade_time, upgrade_time_dt
 
     def main(self):
         self.loop.run_sync(self.on_first)
         PeriodicCallback(callback=self.set_redis, callback_time=timedelta(seconds=5), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_coin, callback_time=timedelta(hours=1), jitter=0.2).start()
+        PeriodicCallback(callback=self.on_coin, callback_time=timedelta(minutes=2), jitter=0.2).start()
         PeriodicCallback(callback=self.on_tick, callback_time=timedelta(seconds=5), jitter=0.2).start()
         PeriodicCallback(callback=self.on_account, callback_time=timedelta(minutes=5), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_contract, callback_time=timedelta(hours=1), jitter=0.2).start()
+        PeriodicCallback(callback=self.on_contract, callback_time=timedelta(minutes=30), jitter=0.2).start()
         self.loop.start()
 
 
