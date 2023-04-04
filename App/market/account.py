@@ -41,7 +41,7 @@ class Account(MyActionTemplate):
                     data = OrmMarket.search.fromAccountTb.byTeam(item.exchange, self.current_user.team, to_dict=True)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="获取账户", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="获取账户", action=item.channel + f".{item.action}", data=data)
 
     async def post(self, item: AccountItem):
         """新增账户"""
@@ -52,7 +52,7 @@ class Account(MyActionTemplate):
                 data = OrmMarket.create.toAccountTb.one(item.exchange, AccountObj(**item.new_account))
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="新增账户", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="新增账户", action=item.channel + f".{item.action}", data=data)
 
     async def put(self, item: AccountItem):
         """修改账户"""
@@ -60,7 +60,7 @@ class Account(MyActionTemplate):
             data = OrmMarket.update.toAccountTb.one(item.exchange, item.new_account)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="修改账户", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="修改账户", action=item.channel + f".{item.action}", data=data)
 
     async def delete(self, item: AccountItem):
         """删除账户"""
@@ -68,7 +68,7 @@ class Account(MyActionTemplate):
             data = OrmMarket.delete.fromAccountTb.one(item.exchange, item.account)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="删除账户", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="删除账户", action=item.channel + f".{item.action}", data=data)
 
 
 if __name__ == '__main__':

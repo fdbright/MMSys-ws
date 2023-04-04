@@ -32,9 +32,9 @@ class Report(MyActionTemplate):
         if item.new_file:
             with open(Configure.DAILY_REPORT_PATH, "wb") as f:
                 f.write(eval(item.new_file))
-            self.after_request(code=1, msg="上传成功", action=item.channel)
+            self.after_request(code=1, msg="上传成功", action=item.channel + f".{item.action}")
         else:
-            self.after_request(code=-1, msg="上传失败", action=item.channel)
+            self.after_request(code=-1, msg="上传失败", action=item.channel + f".{item.action}")
 
 
 class ReportRest(MyHtpMethod):

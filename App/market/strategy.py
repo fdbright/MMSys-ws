@@ -47,7 +47,7 @@ class Strategy(MyActionTemplate):
             }
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="查询策略状态", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="查询策略状态", action=item.channel + f".{item.action}", data=data)
 
     async def post(self, item: StrategyItem):
         """启动策略"""
@@ -95,7 +95,7 @@ class Strategy(MyActionTemplate):
                 data = True
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="启动策略", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="启动策略", action=item.channel + f".{item.action}", data=data)
 
     async def delete(self, item: StrategyItem):
         """关闭策略"""
@@ -120,7 +120,7 @@ class Strategy(MyActionTemplate):
             data = True
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="关闭策略", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="关闭策略", action=item.channel + f".{item.action}", data=data)
 
 
 if __name__ == '__main__':

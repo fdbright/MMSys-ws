@@ -78,7 +78,7 @@ class Coins(MyActionTemplate):
                 await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="获取所有币对数据", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="获取所有币对数据", action=item.channel + f".{item.action}", data=data)
 
     async def post(self, item: CoinsItem):
         """新增币对"""
@@ -91,7 +91,7 @@ class Coins(MyActionTemplate):
                 await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="新增币对", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="新增币对", action=item.channel + f".{item.action}", data=data)
 
     async def put(self, item: CoinsItem):
         """修改币对"""
@@ -101,7 +101,7 @@ class Coins(MyActionTemplate):
                 await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="修改币对", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="修改币对", action=item.channel + f".{item.action}", data=data)
 
     async def delete(self, item: CoinsItem):
         """删除币对"""
@@ -111,7 +111,7 @@ class Coins(MyActionTemplate):
                 await self.update_redis(exchange=item.exchange)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="删除币对", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="删除币对", action=item.channel + f".{item.action}", data=data)
 
     async def update_redis(self, exchange: str):
         """更新币对数据redis"""

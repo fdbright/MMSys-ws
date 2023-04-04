@@ -46,7 +46,7 @@ class Operate(MyActionTemplate):
             )
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="获取操作记录", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="获取操作记录", action=item.channel + f".{item.action}", data=data)
 
     async def delete(self, item: OperateItem):
         """删除记录"""
@@ -54,7 +54,7 @@ class Operate(MyActionTemplate):
             data = OrmUser.delete.fromOperateTb.batch(item.startTime, item.finalTime)
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="删除记录", action=item.channel, data=data)
+        self.after_request(code=1 if data else -1, msg="删除记录", action=item.channel + f".{item.action}", data=data)
 
 
 if __name__ == '__main__':
