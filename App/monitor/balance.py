@@ -67,7 +67,7 @@ class Balance(MyActionTemplate):
                 code = 1
         else:
             code = -1
-        self.after_request(code=code, msg="查询账户余额", action=item.channel + f".{item.action}", data=data)
+        self.after_request(code=code, msg="查询账户余额", action=item, data=data)
 
 
 if __name__ == '__main__':

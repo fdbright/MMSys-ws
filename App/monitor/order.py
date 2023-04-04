@@ -50,7 +50,7 @@ class Order(MyActionTemplate):
                 data = None
         else:
             data = None
-        self.after_request(code=1 if data else -1, msg="查询挂单", action=item.channel + f".{item.action}", data=data)
+        self.after_request(code=1 if data else -1, msg="查询挂单", action=item, data=data)
 
     async def post(self, item: OrderItem):
         """下单"""
@@ -101,7 +101,7 @@ class Order(MyActionTemplate):
             msg = "批量下单"
         else:
             msg = "下单"
-        self.after_request(code=code, msg=msg, action=item.channel + f".{item.action}", data=data)
+        self.after_request(code=code, msg=msg, action=item, data=data)
 
     async def delete(self, item: OrderItem):
         """撤单"""
@@ -137,7 +137,7 @@ class Order(MyActionTemplate):
                 msg = "撤单"
         else:
             msg = "全部撤单"
-        self.after_request(code=code, msg=msg, action=item.channel + f".{item.action}", data=data)
+        self.after_request(code=code, msg=msg, action=item, data=data)
 
 
 if __name__ == '__main__':
