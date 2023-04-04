@@ -354,7 +354,7 @@ class LbkRestApi(MyApiTemplate):
             if history:
                 res = list(sorted(map(lambda x: self.__init4trans(x, price_tick, volume_tick), history), key=lambda x: x["trade_time"], reverse=True))
             else:
-                res = "暂无记录"
+                res = []
             data = TransHistoryReturn(
                 exchange=self.__exchange,
                 trans_lst=res
