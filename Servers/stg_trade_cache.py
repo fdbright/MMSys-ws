@@ -27,7 +27,7 @@ class TradeCache:
         self.loop = IOLoop.current()
         self.add_queue = Queue()
 
-        self.running_cmd = "sudo supervisorctl status ZFT_STG:* |grep RUNNING|awk '{print $1}'"
+        self.cmd = "sudo supervisorctl status ZFT_STG:*|awk '{print $1}'"
 
         # redis
         self.redis_pool = MyAioredis(1)
@@ -39,17 +39,20 @@ class TradeCache:
 
         self.hr2_sec: int = 2 * 60 * 60 * 1000
 
+    def on_subscribe(self, item: dict):
+        """
+        :param item: {'type': 'message', 'pattern': None, 'channel': '', 'data': '{"":""}'}
+        """
+        try:
+            self.add_queue.put(OrderData(**ujson.loads(item["data"])))
+        except:
+            pass
+
     async def subscribe(self):
         conn = await self.redis_pool.open(conn=True)
-        pub = await conn.subscribe(channel=self.channel)
-        while True:
-            item: list = await pub.parse_response(block=True)
-            # print(type(item), item)
-            if item[0] != "message":
-                continue
-            data: OrderData = OrderData(**ujson.loads(item[-1]))
-            # print(data)
-            await self.add_queue.put(data)
+        pub = conn.conn.pubsub(ignore_subscribe_messages=True)
+        await pub.subscribe(TradeCacheLBK=self.on_subscribe)
+        await pub.run()
 
     async def route(self):
         while True:
@@ -101,17 +104,21 @@ class TradeCache:
         else:
             old_data: dict = await conn.hGet(name=name, key=item.customer_id)
             await conn.hSet(name=name, key=item.customer_id, value=self.init_trade(item=item, old_data=old_data).to_dict())
+            del old_data
         await conn.close()
-        del conn, name, old_data
+        del conn, name
 
     async def cal_trade_size(self, conn, symbol):
         name: str = self.name.format(symbol=symbol)
         data: dict = await conn.hGet(name=name)
+        print(symbol, data)
         if not data:
             del name, data
             return
         bid_size, ask_size = 0, 0
         for custom_id, value in data.items():  # type: str, str
+            if custom_id == "trade_size":
+                continue
             val: dict = ujson.loads(value)
             if self.loop.time() * 1000 - int(val["datetime"]) > self.hr2_sec:
                 await conn.hDel(name=name, key=custom_id)
@@ -125,7 +132,7 @@ class TradeCache:
         del name, data, bid_size, ask_size
 
     async def on_timer(self):
-        data = await MyAioSubprocess(self.running_cmd)
+        data = await MyAioSubprocess(self.cmd)
         if data == "":
             return []
         symbols = [v[8:] for v in data.split("\n")]

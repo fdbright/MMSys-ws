@@ -81,6 +81,7 @@ class GetInfoFromDEX:
         self.wbnb_address = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'.lower()
         self.busd_address = '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56'.lower()
         self.usdt_address = '0x55d398326f99059fF775485246999027B3197955'.lower()
+        self.usdc_address = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'.lower()
         self.dex_coin_dict = {}
 
         self.w3 = None
@@ -123,6 +124,8 @@ class GetInfoFromDEX:
             addr = self.usdt_address
         elif _type == "usdt":
             addr = self.busd_address
+        elif _type == "usdc":
+            addr = self.usdc_address
         else:
             return res
         try:
@@ -171,6 +174,8 @@ class GetInfoFromDEX:
                 self.get_wbnb_price()
             coin = symbol["symbol"]
             addr = symbol["f_coin_addr"]
+            # if coin != "crime_usdt":
+            #     continue
             _type = self.symbols_type.get(coin, None)
             if _type:
                 dex_price = self.get_dex_price(address=addr, _type=_type)
@@ -179,10 +184,13 @@ class GetInfoFromDEX:
                     self.get_dex_price(address=addr, _type="busd"),
                     self.get_dex_price(address=addr, _type="usdt"),
                     self.get_dex_price(address=addr, _type="wbnb"),
+                    self.get_dex_price(address=addr, _type="usdc"),
                 ]
                 dex_price = sorted(dex_lst, key=lambda x: x.baseDepth)[-1]
+                print(dex_lst)
                 self.symbols_type[coin] = dex_price.type
             self.dex_coin_dict[coin] = dex_price.to_dict()
+            log.info(f"symbol: {coin}, dex_price: {dex_price}")
             time.sleep(3)
 
     async def set_redis(self):
