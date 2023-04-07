@@ -127,8 +127,7 @@ class TradeCache:
                 bid_size += float(val["traded"])
             else:
                 ask_size += float(val["traded"])
-        if bid_size or ask_size:
-            await conn.hSet(name=name, key=self.trade_size_key, value={"bid_size": bid_size, "ask_size": ask_size})
+        await conn.hSet(name=name, key=self.trade_size_key, value={"bid_size": bid_size, "ask_size": ask_size})
         del name, data, bid_size, ask_size
 
     async def on_timer(self):
