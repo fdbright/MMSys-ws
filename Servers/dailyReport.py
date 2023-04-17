@@ -46,6 +46,7 @@ class DailyReport:
         # self.receivers: list = ["hai.shi@Lbk.one"]
         self.receivers: list = [
             "junxiang@lbk.one", "zhiwei.chen@lbk.one", "rujie.wei@lbk.one", "chao.lu@lbk.one", "bingui.qin@lbk.one",
+            "tianhua.lu@lbk.one", "pengfei.fan@lbk.one", "yue.li@lbk.one",
             # "hai.shi@Lbk.one"
         ]
 
