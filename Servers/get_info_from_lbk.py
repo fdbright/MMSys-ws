@@ -9,7 +9,7 @@ from loguru import logger as log
 from typing import List
 
 import time
-from datetime import timedelta
+from datetime import timedelta, datetime
 from aiohttp import ClientSession
 from tornado.ioloop import PeriodicCallback, IOLoop
 
@@ -39,6 +39,10 @@ class GetInfoFromLBK:
 
         # account
         self.accounts: List[AccountObj] = []
+
+        self.account_01: str = ""
+        self.account_09: str = ""
+        self.account_17: str = ""
 
         # redis_data
         self.last_coin_data: dict = {}
@@ -103,6 +107,9 @@ class GetInfoFromLBK:
         dt = MyDatetime.today()
         upgrade_time = MyDatetime.dt2ts(dt, thousand=True)
         upgrade_time_dt = MyDatetime.dt2str(dt)
+        current_time = datetime.now() + timedelta(hours=8)
+        current_hour = str(current_time.hour).zfill(2)
+        current_date = str(current_time.day).zfill(2) + current_hour
 
         if self.this_coin_data:
             self.this_coin_data["upgrade_time"] = upgrade_time
@@ -126,6 +133,18 @@ class GetInfoFromLBK:
             self.account_data["upgrade_time"] = upgrade_time
             self.account_data["upgrade_time_dt"] = upgrade_time_dt
             await conn.hSet(name=self.name, key="account_data", value=self.account_data)
+            if current_hour == "01":
+                if self.account_01 != current_date:
+                    await conn.hSet(name=self.name, key="account_data_01", value=self.account_data)
+                    self.account_01 = current_date
+            if current_hour == "09":
+                if self.account_09 != current_date:
+                    await conn.hSet(name=self.name, key="account_data_09", value=self.account_data)
+                    self.account_09 = current_date
+            if current_hour == "17":
+                if self.account_17 != current_date:
+                    await conn.hSet(name=self.name, key="account_data_17", value=self.account_data)
+                    self.account_17 = current_date
 
         await conn.close()
         del conn, dt, upgrade_time, upgrade_time_dt
