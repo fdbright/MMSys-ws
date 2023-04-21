@@ -10,8 +10,10 @@ from loguru import logger as log
 from typing import List, Dict
 
 import os
+import schedule
 import openpyxl
 import datetime
+from tornado.gen import sleep
 from tornado.ioloop import IOLoop, PeriodicCallback
 
 from Config import Configure
@@ -92,20 +94,29 @@ class DailyReport:
         self.me.add_file(filepath=fp, filename=fn)
         self.me.send_mail()
 
-    def on_timer(self):
-        if int(self.loop.time()) % 1800 == 0:
-            log.info("start")
-            fn = self.saveFile.format(MyDatetime.add8hr().strftime("%Y-%m-%d %H:%M"))
-            fp = os.path.join(self.template, fn)
-            self.write2excel(fp=fp)
-            self.send_excel(fp=fp, fn=fn)
-            os.remove(fp)
-            log.info("finish")
+    def task(self):
+        log.info("start")
+        fn = self.saveFile.format(MyDatetime.add8hr().strftime("%Y-%m-%d %H:%M"))
+        fp = os.path.join(self.template, fn)
+        self.write2excel(fp=fp)
+        self.send_excel(fp=fp, fn=fn)
+        os.remove(fp)
+        log.info("finish")
+
+    def on_task(self):
+        self.loop.add_callback(self.task)
+
+    async def on_timer(self):
+        schedule.every().hours.at(":00").do(self.on_task)
+        schedule.every().hours.at(":30").do(self.on_task)
+        while True:
+            schedule.run_pending()
+            await sleep(1)
 
     def run(self):
         self.loop.run_sync(self.get_data_from_redis)
         PeriodicCallback(self.get_data_from_redis, callback_time=datetime.timedelta(seconds=30)).start()
-        PeriodicCallback(self.on_timer, callback_time=datetime.timedelta(seconds=1), jitter=0.5).start()
+        self.loop.add_callback(self.on_timer)
         self.loop.start()
 
 
