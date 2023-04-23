@@ -25,16 +25,15 @@ class MyApiTemplate:
 
     async def get_response(self, req: Request) -> Union[dict, list]:
         """异步请求"""
-        # if req.params:
-        #     query: list = []
-        #     for k, v in sorted(req.params.items()):
-        #         query.append(k + "=" + str(v))
-        #     query: str = '&'.join(query)
-        #     path = req.host + req.api + "?" + query
-        #     req.params = {}
-        # else:
-        #     path = req.host + req.api
-        path = req.host + req.api
+        if req.params:
+            query: list = []
+            for k, v in sorted(req.params.items()):
+                query.append(k + "=" + str(v))
+            query: str = '&'.join(query)
+            path = req.host + req.api + "?" + query
+            req.params = {}
+        else:
+            path = req.host + req.api
         cr: ClientResponse = await self.htp_client.request(
             method=req.method,
             url=path,
@@ -43,24 +42,18 @@ class MyApiTemplate:
             data=req.data,
         )
         try:
-            # log.info(cr.url)
+            log.info(cr.url)
             status_code = cr.status
-            if status_code // 100 == 2:
-                resp: dict = await cr.json(loads=ujson.loads)
-                # log.info(f"status_code: {status_code}, resp: {resp}")
-            else:
-                resp: str = await cr.text()
-                log.info(f"status_code: {status_code}, resp: {resp}")
-            # text: str = await cr.text()
-            # if status_code // 100 == 2:
-            #     resp = ujson.loads(text)
-            # else:
-            #     resp = {}
+            resp: str = await cr.text()
+            log.info(f"status_code: {status_code}")
+            # log.info(f"text, type: {type(resp)} value: {resp}")
+            try:
+                resp: dict = ujson.loads(resp)
+            except TypeError:
+                pass
         except Exception as e:
             log.error(f"请求失败, url: {cr.url}, err: {e}")
-            resp = {}
-        # log.info(req)
-        # log.info(resp)
+            resp: dict = {}
         del cr
         return resp
 

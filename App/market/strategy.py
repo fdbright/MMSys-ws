@@ -73,14 +73,15 @@ class Strategy(MyActionTemplate):
                 await self.redis_conn.hSet(
                     name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_db", value=new_info
                 )
-                fts_count = await self.redis_conn.hGet(
-                    name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                    key=f"stg_count_main"
-                )
-                if int(fts_count.get("count", 0)) <= 120:
-                    server = "main"
-                else:
-                    server = "slave"
+                # fts_count = await self.redis_conn.hGet(
+                #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+                #     key=f"stg_count_main"
+                # )
+                # if int(fts_count.get("count", 0)) <= 120:
+                #     server = "main"
+                # else:
+                #     server = "slave"
+                server = "main"
                 kwargs = {
                     "todo": "start",
                     "symbol": item.symbol,
