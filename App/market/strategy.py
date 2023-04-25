@@ -13,6 +13,7 @@ from Utils import FreeDataclass
 from Webs import MyActionTemplate
 from Models import OrmMarket
 from Config import Configure
+from Objects import CoinObj
 
 
 @dataclass
@@ -35,15 +36,16 @@ class Strategy(MyActionTemplate):
     async def get(self, item: StrategyItem):
         """查询策略状态"""
         if self.current_user.monStrategy:
-            strategy_data: dict = await self.redis_conn.hGet(
-                name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                key=f"fts_status_{item.symbol}"
-            )
-            status = strategy_data.get("status", "stopped")
+            # strategy_data: dict = await self.redis_conn.hGet(
+            #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+            #     key=f"fts_status_{item.symbol}"
+            # )
+            # status = strategy_data.get("status", "stopped")
+            coin_data: CoinObj = OrmMarket.search.fromCoinsTb.one(exchange=item.exchange, symbol=item.symbol, to_dict=False)
             data = {
                 "type": "strategy",
                 "symbol": item.symbol,
-                "status": status
+                "status": "running" if coin_data.isUsing else "stopped"
             }
         else:
             data = None
@@ -52,27 +54,47 @@ class Strategy(MyActionTemplate):
     async def post(self, item: StrategyItem):
         """启动策略"""
         if self.current_user.monStrategy:
-            data = await self.redis_conn.hGet(
-                name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                key=f"fts_status_{item.symbol}"
-            )
-            status = data.get("status", None)
-            if status in ["running", "starting"]:
+            coin_data: CoinObj = OrmMarket.search.fromCoinsTb.one(exchange=item.exchange, symbol=item.symbol, to_dict=False)
+            if coin_data.isUsing:
                 data = False
             else:
-                info: dict = OrmMarket.search.fromCoinsTb.forStg(item.exchange, item.symbol, decode=True)
                 conf: dict = {
                     "symbol": item.symbol,
-                    "profit_rate": float(item.profit_rate) if item.profit_rate else info["profit_rate"],
-                    "step_gap": float(item.step_gap) if item.step_gap else info["step_gap"],
-                    "order_amount": int(item.order_amount) if item.order_amount else info["order_amount"],
-                    "order_nums": int(item.order_nums) if item.order_nums else info["order_nums"]
+                    "isUsing": True,
                 }
-                OrmMarket.update.toCoinsTb.one(item.exchange, coin=conf)
-                new_info: dict = OrmMarket.search.fromCoinsTb.all4redis(item.exchange)
-                await self.redis_conn.hSet(
-                    name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_db", value=new_info
-                )
+                if item.profit_rate:
+                    conf["profit_rate"] = float(item.profit_rate)
+                if item.step_gap:
+                    conf["step_gap"] = float(item.step_gap)
+                if item.order_amount:
+                    conf["order_amount"] = int(item.order_amount)
+                if item.order_nums:
+                    conf["order_nums"] = int(item.order_nums)
+                data = OrmMarket.update.toCoinsTb.one(item.exchange, coin=conf)
+            if data:
+                await self.update2redis(exchange=item.exchange)
+
+            # data = await self.redis_conn.hGet(
+            #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+            #     key=f"fts_status_{item.symbol}"
+            # )
+            # status = data.get("status", None)
+            # if status in ["running", "starting"]:
+            #     data = False
+            # else:
+            #     info: dict = OrmMarket.search.fromCoinsTb.forStg(item.exchange, item.symbol, decode=True)
+            #     conf: dict = {
+            #         "symbol": item.symbol,
+            #         "profit_rate": float(item.profit_rate) if item.profit_rate else info["profit_rate"],
+            #         "step_gap": float(item.step_gap) if item.step_gap else info["step_gap"],
+            #         "order_amount": int(item.order_amount) if item.order_amount else info["order_amount"],
+            #         "order_nums": int(item.order_nums) if item.order_nums else info["order_nums"]
+            #     }
+            #     OrmMarket.update.toCoinsTb.one(item.exchange, coin=conf)
+            #     new_info: dict = OrmMarket.search.fromCoinsTb.all4redis(item.exchange)
+            #     await self.redis_conn.hSet(
+            #         name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_db", value=new_info
+            #     )
                 # fts_count = await self.redis_conn.hGet(
                 #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
                 #     key=f"stg_count_main"
@@ -81,19 +103,19 @@ class Strategy(MyActionTemplate):
                 #     server = "main"
                 # else:
                 #     server = "slave"
-                server = "main"
-                kwargs = {
-                    "todo": "start",
-                    "symbol": item.symbol,
-                    "exchange": item.exchange,
-                    "team": info["team"],
-                    "server": server,
-                }
-                await self.redis_conn.publish(
-                    channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server=server),
-                    msg=kwargs
-                )
-                data = True
+                # server = "main"
+                # kwargs = {
+                #     "todo": "start",
+                #     "symbol": item.symbol,
+                #     "exchange": item.exchange,
+                #     "team": info["team"],
+                #     "server": server,
+                # }
+                # await self.redis_conn.publish(
+                #     channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server=server),
+                #     msg=kwargs
+                # )
+                # data = True
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="启动策略", action=item, data=data)
@@ -101,24 +123,36 @@ class Strategy(MyActionTemplate):
     async def delete(self, item: StrategyItem):
         """关闭策略"""
         if self.current_user.monStrategy:
-            info: dict = OrmMarket.search.fromCoinsTb.forStg(item.exchange, item.symbol, decode=True)
-            data = await self.redis_conn.hGet(
-                name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                key=f"fts_status_{item.symbol}"
-            )
-            server = data.get("server", "main")
-            kwargs = {
-                "todo": "stop",
-                "symbol": item.symbol,
-                "exchange": item.exchange,
-                "team": info["team"],
-                "server": server
-            }
-            await self.redis_conn.publish(
-                channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server=server),
-                msg=kwargs
-            )
-            data = True
+            coin_data: CoinObj = OrmMarket.search.fromCoinsTb.one(exchange=item.exchange, symbol=item.symbol, to_dict=False)
+            if coin_data.isUsing:
+                data = False
+            else:
+                conf: dict = {
+                    "symbol": item.symbol,
+                    "isUsing": False,
+                }
+                data = OrmMarket.update.toCoinsTb.one(item.exchange, coin=conf)
+            if data:
+                await self.update2redis(exchange=item.exchange)
+
+            # info: dict = OrmMarket.search.fromCoinsTb.forStg(item.exchange, item.symbol, decode=True)
+            # data = await self.redis_conn.hGet(
+            #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+            #     key=f"fts_status_{item.symbol}"
+            # )
+            # server = data.get("server", "main")
+            # kwargs = {
+            #     "todo": "stop",
+            #     "symbol": item.symbol,
+            #     "exchange": item.exchange,
+            #     "team": info["team"],
+            #     "server": server
+            # }
+            # await self.redis_conn.publish(
+            #     channel=Configure.REDIS.stg_ws_channel.format(exchange=item.exchange.upper(), server=server),
+            #     msg=kwargs
+            # )
+            # data = True
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="关闭策略", action=item, data=data)

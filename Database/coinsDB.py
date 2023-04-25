@@ -28,7 +28,7 @@ class CBM(BaseModel):
     order_amount = IntegerField(null=True)      # 挂单量
     order_nums = IntegerField(default=30)       # 档位
 
-    isUsing = BooleanField(default=True)        # 是否正在做市
+    isUsing = BooleanField(default=False)        # 是否正在做市
     createTime = DateTimeField()                # 添加时间
     updateTime = DateTimeField()                # 更新时间
 

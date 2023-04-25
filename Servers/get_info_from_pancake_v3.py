@@ -157,7 +157,7 @@ class GetInfoFromDEX:
         for index, symbol in enumerate(self.symbols):
             coin = symbol["symbol"]
             addr = symbol["f_coin_addr"]
-            if coin != "crime_usdt":
+            if coin not in ["crime_usdt", "cheel_usdt"]:
                 continue
             self.init_web3(index=(index % 14))
             if self.wbnb_price == -1:

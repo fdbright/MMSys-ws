@@ -174,8 +174,8 @@ class GetInfoFromDEX:
                 self.get_wbnb_price()
             coin = symbol["symbol"]
             addr = symbol["f_coin_addr"]
-            # if coin != "crime_usdt":
-            #     continue
+            if coin != ["crime_usdt", "cheel_usdt"]:
+                continue
             _type = self.symbols_type.get(coin, None)
             if _type:
                 dex_price = self.get_dex_price(address=addr, _type=_type)

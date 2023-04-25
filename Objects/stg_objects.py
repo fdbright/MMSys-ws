@@ -18,6 +18,7 @@ class Conf(FreeDataclass):
     account: str = ""
     team: str = ""
     symbol: str = ""
+    isUsing: bool = False
     step_gap: float = -1        # 步长
     order_amount: int = -1      # 挂单量
     order_nums: int = -1        # 档位

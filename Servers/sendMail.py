@@ -24,7 +24,8 @@ class SendMail:
         self._queue = Queue()
         self.redis_pool = MyAioredis(db=0)
 
-        self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
+        # self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
+        self.me = MyEmail("smtp.126.com", "lbk20230525@126.com", "QBBWRPIBJWJEKWZJ")
         self.channel = Configure.REDIS.send_mail_channel
 
     async def subscribe(self):

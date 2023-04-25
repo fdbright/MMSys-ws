@@ -54,6 +54,13 @@ class MyActionTemplate:
     def add_operation(operation: OperateObj):
         OrmUser.create.toOperateTb.one(operation)
 
+    async def update2redis(self, exchange: str):
+        """更新币对数据redis"""
+        db.connect(reuse_if_open=True)
+        data = OrmMarket.search.fromCoinsTb.all4redis(exchange=exchange)
+        if data:
+            await self.redis_conn.hSet(name=f"{exchange.upper()}-DB", key=f"{exchange.lower()}_db", value=data)
+
     async def get(self, item):
         pass
 

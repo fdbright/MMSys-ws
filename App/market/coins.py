@@ -12,7 +12,6 @@ from typing import List
 import ujson
 from dataclasses import dataclass
 
-from Database import db
 from Utils import FreeDataclass
 from Config import Configure
 from Webs import MyActionTemplate
@@ -58,10 +57,10 @@ class Coins(MyActionTemplate):
                     volume = round(((cex_price - cmc_price) / cmc_price) * 100, 2)
                 if dex_price not in [-1, 0]:
                     volume = round(((cex_price - dex_price) / dex_price) * 100, 2)
-                strategy_data: dict = await self.redis_conn.hGet(
-                    name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                    key=f"fts_status_{coin.symbol}"
-                )
+                # strategy_data: dict = await self.redis_conn.hGet(
+                #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+                #     key=f"fts_status_{coin.symbol}"
+                # )
                 data.append(CoinPriceObj(
                     symbol=coin.symbol,
                     exchange=item.exchange,
@@ -71,11 +70,12 @@ class Coins(MyActionTemplate):
                     dex_price=dex_price,
                     volume=volume,
                     flag=True if abs(volume) >= 5 else False,
-                    strategy_status=strategy_data.get("status", "stopped")
+                    # strategy_status=strategy_data.get("status", "stopped")
+                    strategy_status="running" if coin.isUsing else "stopped"
                 ).to_dict())
             data = sorted(data, key=lambda x: x["symbol"])
             if data:
-                await self.update_redis(exchange=item.exchange)
+                await self.update2redis(exchange=item.exchange)
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="获取所有币对数据", action=item, data=data)
@@ -88,7 +88,7 @@ class Coins(MyActionTemplate):
             else:
                 data = OrmMarket.create.toCoinsTb.one(item.exchange, CoinObj(**item.new_coin))
             if data:
-                await self.update_redis(exchange=item.exchange)
+                await self.update2redis(exchange=item.exchange)
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="新增币对", action=item, data=data)
@@ -98,7 +98,7 @@ class Coins(MyActionTemplate):
         if self.current_user.monUpdate:
             data = OrmMarket.update.toCoinsTb.one(item.exchange, item.new_coin)
             if data:
-                await self.update_redis(exchange=item.exchange)
+                await self.update2redis(exchange=item.exchange)
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="修改币对", action=item, data=data)
@@ -108,18 +108,10 @@ class Coins(MyActionTemplate):
         if self.current_user.monDelete:
             data = OrmMarket.delete.fromCoinsTb.one(item.exchange, item.symbol)
             if data:
-                await self.update_redis(exchange=item.exchange)
+                await self.update2redis(exchange=item.exchange)
         else:
             data = None
         self.after_request(code=1 if data else -1, msg="删除币对", action=item, data=data)
-
-    async def update_redis(self, exchange: str):
-        """更新币对数据redis"""
-        db.connect(reuse_if_open=True)
-        data = OrmMarket.search.fromCoinsTb.all4redis(exchange=exchange)
-        # log.info(data)
-        if data:
-            await self.redis_conn.hSet(name=f"{exchange.upper()}-DB", key="lbk_db", value=data)
 
 
 if __name__ == '__main__':
