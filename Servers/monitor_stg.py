@@ -242,12 +242,15 @@ class MonitorSTG:
         log.info(f"策略撤单: {symbol}")
         del conf, order_ids
 
+    async def on_first(self):
+        await self.init_by_exchange()
+        await self.get_info_from_redis()
+        await self.check_if_stop()
+        await self.check_symbols()
+
     def run(self):
         log.info(f"启动策略监控 {MyDatetime.dt2str(MyDatetime.add8hr())}")
-        self.loop.run_sync(self.init_by_exchange)
-        self.loop.run_sync(self.get_info_from_redis)
-        self.loop.run_sync(self.check_if_stop)
-        self.loop.run_sync(self.check_symbols)
+        self.loop.run_sync(self.on_first)
 
         if self.server != self.default_server:
             PeriodicCallback(callback=self.clone_redis, callback_time=timedelta(seconds=1), jitter=0.2).start()

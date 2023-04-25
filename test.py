@@ -21,11 +21,12 @@ class RestartRunningSTG:
         self.loop = IOLoop.current()
 
         self.update_cmd: str = "sudo supervisorctl update"
+        self.status_cmd: str = "sudo supervisorctl status ZFT_STG:{symbol}|awk '{print $2}'"
         self.restart_cmd: str = "sudo supervisorctl restart ZFT_STG:{symbol}"
         self.running_cmd = "sudo supervisorctl status ZFT_STG:* |grep RUNNING|awk '{print $1}'"
 
     async def get_running_stg(self) -> list:
-        data = await MyAioSubprocess(self.running_cmd)
+        data = await MyAioSubprocess(cmd=self.running_cmd)
         if data == "":
             return []
         return [v[8:] for v in data.split("\n")]
@@ -35,7 +36,9 @@ class RestartRunningSTG:
 
         log.info(f"start: {symbols}")
         for index, symbol in enumerate(symbols, 1):
-            await MyAioSubprocess(self.restart_cmd.format(symbol=symbol))
+            status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
+            if status == "RUNNING":
+                await MyAioSubprocess(cmd=self.restart_cmd.format(symbol=symbol))
             log.info(f"restart_stg: No.{index}, {symbol}")
         log.info("finish")
 

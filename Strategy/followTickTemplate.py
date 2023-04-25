@@ -264,7 +264,10 @@ class FollowTickTemplate(WebsocketClient):
                     <p>最近2小时成交额超限({self.trade_limit})</p>
                     <p>请人工介入</p>
                     """,
-                    "receivers": ["junxiang@lbk.one", "bingui.qin@lbk.one", "zhiwei.chen@lbk.one", "chao.lu@lbk.one"]
+                    "receivers": [
+                        "junxiang@lbk.one", "bingui.qin@lbk.one", "zhiwei.chen@lbk.one", "chao.lu@lbk.one",
+                        "tianhua.lu@lbk.one", "pengfei.fan@lbk.one", "yue.li@lbk.one",
+                    ]
                 }
             )
         await conn.publish(
