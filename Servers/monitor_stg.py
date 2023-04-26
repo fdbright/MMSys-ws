@@ -9,16 +9,13 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from loguru import logger as log
 
 import os
-import ujson
-from datetime import timedelta
 from aiohttp import ClientSession
-from sshtunnel import SSHTunnelForwarder
 from tornado.gen import sleep
 from tornado.queues import Queue
-from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado.ioloop import IOLoop
 
 from Config import Configure
-from Utils import MyAioredis, MyAioSubprocess, MyDatetime
+from Utils import MyAioredis, MyAioSubprocess
 from Utils.myEncoder import MyEncoder
 from Models import LbkRestApi
 
@@ -177,7 +174,7 @@ class MonitorSTG:
             status = await self.get_stg_status()
             for symbol, item in self.db_data.items():
                 if item["isUsing"]:
-                    if status.get(symbol, None) == "RUNNING":
+                    if status.get(symbol, None) in ["RUNNING", "STARTING"]:
                         continue
                     await self.todo.put({"todo": "start", "symbol": symbol})
                 else:
