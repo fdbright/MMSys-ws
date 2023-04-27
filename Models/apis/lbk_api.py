@@ -221,9 +221,6 @@ class LbkRestApi(MyApiTemplate):
             )
         return data.to_dict()
 
-    def make_custom_id(self, custom: str) -> str:
-        return f"{custom}{int(time.time() * 1000)}" + str(random.randint(10000, 20000))
-
     async def create_order(self, symbol: str, _type: str, price: float, amount: float, custom_id: str, conf: dict) -> dict:
         ck = await self.check_order_conf(conf)
         if ck:

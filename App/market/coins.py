@@ -57,10 +57,10 @@ class Coins(MyActionTemplate):
                     volume = round(((cex_price - cmc_price) / cmc_price) * 100, 2)
                 if dex_price not in [-1, 0]:
                     volume = round(((cex_price - dex_price) / dex_price) * 100, 2)
-                # strategy_data: dict = await self.redis_conn.hGet(
-                #     name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
-                #     key=f"fts_status_{coin.symbol}"
-                # )
+                strategy_data: dict = await self.redis_conn.hGet(
+                    name=Configure.REDIS.stg_db.format(exchange=item.exchange.upper()),
+                    key=f"fts_status_{coin.symbol}"
+                )
                 data.append(CoinPriceObj(
                     symbol=coin.symbol,
                     exchange=item.exchange,
@@ -70,8 +70,8 @@ class Coins(MyActionTemplate):
                     dex_price=dex_price,
                     volume=volume,
                     flag=True if abs(volume) >= 5 else False,
-                    # strategy_status=strategy_data.get("status", "stopped")
-                    strategy_status="running" if coin.isUsing else "stopped"
+                    strategy_status=strategy_data.get("status", "stopped")
+                    # strategy_status="running" if coin.isUsing else "stopped"
                 ).to_dict())
             data = sorted(data, key=lambda x: x["symbol"])
             if data:

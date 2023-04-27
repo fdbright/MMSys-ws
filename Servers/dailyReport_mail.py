@@ -17,7 +17,7 @@ from tornado.gen import sleep
 from tornado.ioloop import IOLoop, PeriodicCallback
 
 from Config import Configure
-from Utils import MyAioredis, MyEmail, MyDatetime
+from Utils import MyAioredis, MyDatetime
 from Objects import AccountObj
 
 
@@ -44,7 +44,7 @@ class DailyReport:
         self.cmc_price: dict = {}
         self.pancake_price: dict = {}
 
-        self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
+        # self.me = MyEmail(Configure.EMAIL.host, Configure.EMAIL.user, Configure.EMAIL.password)
         # self.receivers: list = ["hai.shi@Lbk.one"]
         self.receivers: list = [
             "junxiang@lbk.one", "zhiwei.chen@lbk.one", "rujie.wei@lbk.one", "chao.lu@lbk.one", "bingui.qin@lbk.one",
@@ -89,18 +89,20 @@ class DailyReport:
         wb.close()
         log.info(f"写入日报: {fp}")
 
-    def send_excel(self, fp: str, fn: str):
-        self.me.init_msg(self.receivers, sub_title="账户余额情况推送")
-        self.me.add_file(filepath=fp, filename=fn)
-        self.me.send_mail()
-
-    def task(self):
+    async def task(self):
         log.info("start")
+        conn = await self.redis_pool.open(conn=True)
         fn = self.saveFile.format(MyDatetime.add8hr().strftime("%Y-%m-%d %H:%M"))
         fp = os.path.join(self.template, fn)
         self.write2excel(fp=fp)
-        self.send_excel(fp=fp, fn=fn)
-        os.remove(fp)
+        await conn.publish(channel="SendEmail", msg={
+            "receivers": self.receivers,
+            "title": "账户余额情况推送",
+            "content": "",
+            "filename": fn,
+            "filepath": fp,
+            "delete": True
+        })
         log.info("finish")
 
     def on_task(self):

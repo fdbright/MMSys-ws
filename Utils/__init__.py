@@ -8,6 +8,8 @@ from .myDecorator import ExDecorator
 from .myEmail import MyEmail
 from .myEncoder import MyEncoder
 from .myAioredis import MyAioredis, MyAioRedisFunction
+from .myAioredisV2 import MyAioredis as MyAioredisV2
+from .myAioredisV2 import MyAioredisFunctools
 from .myRedis import MyRedis, MyRedisFunction
 from .mySubprocess import MySubprocess, MyAioSubprocess
 

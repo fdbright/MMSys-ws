@@ -106,6 +106,9 @@ class WebsocketClient:
 
         self.is_connected: bool = False
 
+    async def init_session(self):
+        self.session = ClientSession(trust_env=True)
+
     async def on_ping(self, data: dict):
         pass
 

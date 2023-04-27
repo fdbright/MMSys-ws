@@ -10,6 +10,7 @@ from loguru import logger as log
 from typing import List
 
 import smtplib
+from email.header import Header
 from email.mime.text import MIMEText  # 负责构造文本
 from email.mime.multipart import MIMEMultipart  # 负责将多个对象集合起来
 
@@ -32,6 +33,10 @@ class MyEmail:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.quit()
 
+    @staticmethod
+    def format_mail(mail: str) -> str:
+        return mail.split("@")[0] + f"<{mail}>"
+
     def init_msg(self, receivers: List[str], sub_title: str, sub_content: str = None):
         """
         :param sub_title: 邮件主题
@@ -45,9 +50,9 @@ class MyEmail:
         else:
             self.mm = MIMEMultipart("related")
         self.mm["Subject"] = sub_title
-        self.mm["From"] = self.sender
+        self.mm["From"] = self.mm["Cc"] = Header(self.format_mail(self.sender))
         for receiver in self.receivers:
-            self.mm["To"] = receiver
+            self.mm["To"] = Header(self.format_mail(receiver))
 
     def add_file(self, filepath: str, filename: str, charset="utf-8"):
         attachment = MIMEText(open(filepath, "rb").read(), "base64", charset)

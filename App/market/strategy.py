@@ -36,10 +36,11 @@ class Strategy(MyActionTemplate):
         """查询策略状态"""
         if self.current_user.monStrategy:
             coin_data: CoinObj = OrmMarket.search.fromCoinsTb.one(exchange=item.exchange, symbol=item.symbol, to_dict=False)
+            status = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-STG-DB", key=f"fts_status_{item.symbol}")
             data = {
                 "type": "strategy",
                 "symbol": item.symbol,
-                "status": "running" if coin_data.isUsing else "stopped"
+                "status": status.get("status", "stopped")
             }
         else:
             data = None

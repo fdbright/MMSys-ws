@@ -48,7 +48,7 @@ class MonitorSTG:
                           "programs="
         self.model: str = "[program:{symbol}]\n" \
                           "directory=/home/ec2-user/MMSys-ws/Strategy\n" \
-                          "command=/home/ec2-user/anaconda3/envs/lbk-tornado/bin/python followTickTemplate.py --symbol={symbol} --server=main\n" \
+                          "command=/home/ec2-user/anaconda3/envs/lbk-tornado/bin/python followTickTemplate_old.py --symbol={symbol} --server=main\n" \
                           "autostart=false\n" \
                           "autorestart=unexpected\n" \
                           "startretries=3\n" \

@@ -8,8 +8,9 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 
 from loguru import logger as log
 
-from datetime import timedelta
-from tornado.ioloop import IOLoop, PeriodicCallback
+import schedule
+from tornado.gen import sleep
+from tornado.ioloop import IOLoop
 
 from Utils import MyAioSubprocess
 
@@ -36,12 +37,15 @@ class MonitorSystem:
             await self.clear_cache()
 
     async def on_timer(self):
-        await self.clear_cache()
+        schedule.every().day.at("00:00").do(lambda: self.loop.add_callback(self.clear_cache))
+        schedule.every().day.at("08:00").do(lambda: self.loop.add_callback(self.clear_cache))
+        schedule.every().day.at("16:00").do(lambda: self.loop.add_callback(self.clear_cache))
+        while True:
+            schedule.run_pending()
+            await sleep(1)
 
     def run(self):
-        self.loop.run_sync(self.on_timer)
-        PeriodicCallback(self.on_check, callback_time=timedelta(minutes=10)).start()
-        PeriodicCallback(self.on_timer, callback_time=timedelta(hours=6)).start()
+        self.loop.add_callback(self.on_timer)
         self.loop.start()
 
 

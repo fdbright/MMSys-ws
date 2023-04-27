@@ -4,6 +4,8 @@
 
 import sys
 
+import ujson
+
 sys.path.append("/home/ec2-user/MMSys-ws")
 
 from loguru import logger as log
@@ -14,10 +16,11 @@ from tornado.gen import sleep
 from tornado.queues import Queue
 from tornado.ioloop import IOLoop
 
+from Database import db
 from Config import Configure
 from Utils import MyAioredis, MyAioSubprocess
 from Utils.myEncoder import MyEncoder
-from Models import LbkRestApi
+from Models import LbkRestApi, OrmMarket
 
 
 class MonitorSTG:
@@ -36,6 +39,7 @@ class MonitorSTG:
         self.redis_pool = MyAioredis(0)
         self.name: str = f"{self.exchange.upper()}-DB"
         self.name_stg: str = f"{self.exchange.upper()}-STG-DB"
+        # self.name_stg: str = f"{self.exchange.upper()}-STG-WS-DB-{self.default_server}"
         self.stg_count: int = 0
         self.channel = Configure.REDIS.stg_ws_channel.format(exchange=self.exchange.upper(), server=self.server)
 
@@ -150,39 +154,67 @@ class MonitorSTG:
             if todo == "start":
                 if self.server != self.default_server:
                     await sleep(2)
-                await conn.hSet(name=self.name_stg, key=f"fts_status_{symbol}", value={"status": "starting"})
-                await MyAioSubprocess(cmd="")
-                await MyAioSubprocess(cmd=self.start_cmd.format(symbol=symbol))
+                status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
+                if status not in ["RUNNING", "STARTING"]:
+                    await MyAioSubprocess(cmd=self.start_cmd.format(symbol=symbol))
                 log.info(f"启动策略: {symbol}")
             elif todo == "stop":
                 await MyAioSubprocess(cmd=self.stop_cmd.format(symbol=symbol))
                 await conn.hDel(name=self.name_stg, key=f"fts_status_{symbol}")
                 await self.cancel_orders(symbol, conn)
                 log.info(f"关闭策略: {symbol}")
+            elif todo == "warning":
+                db.connect(reuse_if_open=True)
+                OrmMarket.update.toCoinsTb.one(exchange=self.exchange, coin={"symbol": symbol, "isUsing": False})
+                data = OrmMarket.search.fromCoinsTb.all4redis(exchange=self.exchange)
+                if data:
+                    await conn.hSet(name=f"{self.exchange.upper()}-DB", key=f"{self.exchange.lower()}_db", value=data)
+                await MyAioSubprocess(cmd=self.stop_cmd.format(symbol=symbol))
+                db.close()
             else:  # restart
                 status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
-                if status == "STOPPED":
-                    continue
-                await MyAioSubprocess(cmd=self.restart_cmd.format(symbol=symbol))
+                if status != "STOPPED":
+                    await MyAioSubprocess(cmd=self.restart_cmd.format(symbol=symbol))
                 log.info(f"重启策略: {symbol}")
             await conn.close()
-            del item, symbol, conn, todo
+            del item, symbol, conn
+            if todo == "stop":
+                continue
+            await sleep(4)
 
     async def monitor(self):
         while True:
             await self.get_data_from_redis()
             status = await self.get_stg_status()
+            conn = await self.redis_pool.open(conn=True)
             for symbol, item in self.db_data.items():
                 if item["isUsing"]:
                     if status.get(symbol, None) in ["RUNNING", "STARTING"]:
                         continue
+                    await conn.hSet(name=self.name_stg, key=f"fts_status_{symbol}", value={"status": "starting"})
                     await self.todo.put({"todo": "start", "symbol": symbol})
                 else:
                     if status.get(symbol, None) == "STOPPED":
+                        await conn.hDel(name=self.name_stg, key=f"fts_status_{symbol}")
                         continue
                     await self.todo.put({"todo": "stop", "symbol": symbol})
             await self.upgrade_conf(current_status=status)
-            await sleep(2)
+            await conn.close()
+            del conn
+            await sleep(1)
+
+    def on_subscribe(self, data: dict):
+        self.todo.put(ujson.loads(data["data"]))
+
+    async def subscribe(self):
+        conn = await self.redis_pool.open(conn=True)
+        pub = await conn.subscribe(channel=f"{self.exchange.upper()}_STG_WS_DB")
+        while True:
+            item: list = await pub.parse_response(block=True)
+            print(type(item), item)
+            if item[0] != "message":
+                continue
+            await self.todo.put(ujson.loads(item[-1]))
 
     async def on_first(self):
         await self.init_by_exchange()
@@ -196,6 +228,7 @@ class MonitorSTG:
         self.loop.run_sync(self.on_first)
         self.loop.add_callback(self.handle)
         self.loop.add_callback(self.monitor)
+        self.loop.add_callback(self.subscribe)
         self.loop.start()
 
 

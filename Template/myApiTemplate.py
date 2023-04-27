@@ -8,6 +8,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from typing import Union
 from loguru import logger as log
 
+import uuid
 import ujson
 from aiohttp import ClientSession, ClientResponse
 
@@ -42,7 +43,7 @@ class MyApiTemplate:
             data=req.data,
         )
         try:
-            log.info(cr.url)
+            # log.info(cr.url)
             status_code = cr.status
             resp: str = await cr.text()
             log.info(f"status_code: {status_code}")
@@ -116,9 +117,13 @@ class MyApiTemplate:
         else:
             return price_tick, min_volume, volume_tick
 
-    def make_custom_id(self, custom: str) -> str:
-        """获取订单ID"""
-        raise NotImplementedError
+    @staticmethod
+    def make_custom_id(custom: str = "") -> str:
+        """
+        生成自定义ID
+        :param custom: 开始字符串
+        """
+        return custom + uuid.uuid4().hex[len(custom):] if custom else uuid.uuid4().hex
 
     async def create_order(self, symbol: str, _type: str, price: float, amount: float, custom: str, conf: dict) -> dict:
         """下单"""
