@@ -126,7 +126,7 @@ class FollowTickTemplate(WebsocketClient):
 
         # log
         self.fp = os.path.join(Configure.LOG_PATH, "stg", f"stg_{self.symbol}.log")
-        # log.add(self.fp, retention="2 days", encoding="utf-8")
+        log.add(self.fp, retention="2 days", encoding="utf-8")
 
         # redis
         self.redis_pool_db0 = MyAioredisV2(db=0)
@@ -668,7 +668,9 @@ class FollowTickTemplate(WebsocketClient):
         await self.check_last_open_orders()         # 检查上次残留订单, 一次性
         await self.check_trade_size_from_rest()     # 检查最近2hour成交额, 1min/次
         await self.check_trade_size_from_redis()    # 同上
-        await self.check_params()                 # 检查参数
+        await self.get_tick_from_redis()            # 获取精度数据, 1hour/次
+        await self.get_price_from_redis()           # 获取最新价格, 5sec/次
+        await self.check_params()                   # 检查参数
 
         # subscribe_key
         log.info("连接 websocket")
@@ -683,12 +685,10 @@ class FollowTickTemplate(WebsocketClient):
                 log.info("等待websocket连接")
                 await sleep(1)
                 continue
-            log.info("首次执行")
-            await self.on_status(first_time=True)       # 设置策略状态, 1min/次
-            await self.get_tick_from_redis()            # 获取精度数据, 1hour/次
-            await self.get_price_from_redis()           # 获取最新价格, 5sec/次
-            await self.laying_orders_1st()              # 铺单
             break
+        log.info("首次执行")
+        await self.on_status(first_time=True)  # 设置策略状态, 1min/次
+        await self.laying_orders_1st()  # 铺单
 
     def run(self):
         log.info("\n\n\n\n\n\n")

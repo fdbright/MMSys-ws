@@ -46,15 +46,15 @@ class MonitorSTG:
         # constants
         self.api = None
         self.db_data: dict = {}
-        self.stop_cmd: str = "sudo supervisorctl stop ZFT_STG:{symbol}"
-        self.start_cmd: str = "sudo supervisorctl start ZFT_STG:{symbol}"
-        self.restart_cmd: str = "sudo supervisorctl restart ZFT_STG:{symbol}"
+        self.stop_cmd: str = "sudo supervisorctl stop ZFT_STG-{symbol}"
+        self.start_cmd: str = "sudo supervisorctl start ZFT_STG-{symbol}"
+        self.restart_cmd: str = "sudo supervisorctl restart ZFT_STG-{symbol}"
 
         # config
         self.config_fp: str = "/etc/supervisor/conf.d/FT_STG.conf"
-        self.title: str = "[group:ZFT_STG]\n" \
-                          "programs="
-        self.value: str = "[program:{symbol}]\n" \
+        # self.title: str = "[group:ZFT_STG]\n" \
+        #                   "programs="
+        self.value: str = "[program:ZFT_STG-{symbol}]\n" \
                           "directory=/home/ec2-user/MMSys-ws/Strategy\n" \
                           "command=/home/ec2-user/anaconda3/envs/lbk-tornado/bin/python followTickTemplate.py --server=main --symbol={symbol}\n" \
                           "autostart=false\n" \
@@ -72,7 +72,7 @@ class MonitorSTG:
                           "stdout_logfile_backups = 20"
 
         self.fp = os.path.join(Configure.LOG_PATH, "stg_action.log")
-        # log.add(self.fp, retention="2 days", encoding="utf-8")
+        log.add(self.fp, retention="2 days", encoding="utf-8")
 
     async def init_by_exchange(self):
         if self.exchange == "lbk":
@@ -90,13 +90,13 @@ class MonitorSTG:
 
     @staticmethod
     async def get_stg_status() -> dict:
-        data = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:*|awk '{print $1,$2}'")
+        data = await MyAioSubprocess(cmd="sudo supervisorctl status|grep ZFT_STG-|awk '{print $1,$2}'")
         if data == "":
             return {}
         res = {}
         for row in data.strip().split("\n"):
             symbol, status = row.split(" ")
-            res[symbol.replace("ZFT_STG:", "").strip()] = status.strip()
+            res[symbol.replace("ZFT_STG-", "").strip()] = status.strip()
         return res
 
     async def cancel_orders(self, symbol: str, conn):
@@ -116,17 +116,16 @@ class MonitorSTG:
         now_symbols: set = set(current_status.keys())
         if all_symbols == now_symbols:
             return
-        new_title: list = []
         new_value: list = []
         for symbol in sorted(all_symbols):
-            new_title.append(symbol)
+            # new_title.append(symbol)
             new_value.append(self.value.format(symbol=symbol))
-        title = self.title + ",".join(new_title)
+        # title = self.title + ",".join(new_title)
         value = "\n\n".join(new_value)
         with open(self.config_fp, "w") as f:
-            f.write(title + "\n\n" + value)
+            f.write(value)
         await MyAioSubprocess(cmd="sudo supervisorctl update")
-        del all_symbols, now_symbols, new_title, new_value, title, value
+        del all_symbols, now_symbols, new_value, value
 
     async def check_if_stop(self):
         conn = await self.redis_pool.open(conn=True)
@@ -154,7 +153,7 @@ class MonitorSTG:
             if todo == "start":
                 if self.server != self.default_server:
                     await sleep(2)
-                status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
+                status = await MyAioSubprocess(cmd="sudo supervisorctl status|grep ZFT_STG-" + symbol + "|awk '{print $2}'")
                 if status not in ["RUNNING", "STARTING"]:
                     await MyAioSubprocess(cmd=self.start_cmd.format(symbol=symbol))
                 log.info(f"启动策略: {symbol}")
@@ -172,7 +171,7 @@ class MonitorSTG:
                 await MyAioSubprocess(cmd=self.stop_cmd.format(symbol=symbol))
                 db.close()
             else:  # restart
-                status = await MyAioSubprocess(cmd="sudo supervisorctl status ZFT_STG:" + symbol + "|awk '{print $2}'")
+                status = await MyAioSubprocess(cmd="sudo supervisorctl status|grep ZFT_STG-" + symbol + "|awk '{print $2}'")
                 if status != "STOPPED":
                     await MyAioSubprocess(cmd=self.restart_cmd.format(symbol=symbol))
                 log.info(f"重启策略: {symbol}")
@@ -186,8 +185,10 @@ class MonitorSTG:
         while True:
             await self.get_data_from_redis()
             status = await self.get_stg_status()
+            # print(status)
             conn = await self.redis_pool.open(conn=True)
             for symbol, item in self.db_data.items():
+                # log.info(f"check: {symbol}, status: {item['isUsing']}")
                 if item["isUsing"]:
                     if status.get(symbol, None) in ["RUNNING", "STARTING"]:
                         continue

@@ -35,7 +35,6 @@ class Strategy(MyActionTemplate):
     async def get(self, item: StrategyItem):
         """查询策略状态"""
         if self.current_user.monStrategy:
-            coin_data: CoinObj = OrmMarket.search.fromCoinsTb.one(exchange=item.exchange, symbol=item.symbol, to_dict=False)
             status = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-STG-DB", key=f"fts_status_{item.symbol}")
             data = {
                 "type": "strategy",
