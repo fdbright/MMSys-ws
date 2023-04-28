@@ -8,14 +8,14 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from loguru import logger as log
 from typing import List
 
-import time
-import datetime
+import schedule
 import pandas as pd
 from dataclasses import dataclass
 from sqlalchemy import create_engine
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
-from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado.gen import sleep
+from tornado.ioloop import IOLoop
 
 from Utils import MyAioredis, MyDatetime, FreeDataclass
 
@@ -167,8 +167,9 @@ class GetInfoFromDEX:
         finally:
             return res
 
-    def get_price(self):
+    async def get_price(self):
         for index, symbol in enumerate(self.symbols):
+            print(symbol)
             self.init_web3(index=(index % 12))
             if index == 0:
                 self.get_wbnb_price()
@@ -191,7 +192,7 @@ class GetInfoFromDEX:
                 self.symbols_type[coin] = dex_price.type
             self.dex_coin_dict[coin] = dex_price.to_dict()
             log.info(f"symbol: {coin}, dex_price: {dex_price}")
-            time.sleep(3)
+            await sleep(3)
 
     async def set_redis(self):
         conn = await self.redis_pool.open(conn=True)
@@ -203,15 +204,25 @@ class GetInfoFromDEX:
         await conn.hSet(name=self.name, key=self.key, value=self.dex_coin_dict)
         await conn.close()
 
-    async def on_timer(self):
+    async def task(self):
         self.get_data_from_mysql()
-        self.get_price()
+        await self.get_price()
         await self.set_redis()
         self.dex_coin_dict.clear()
 
+    async def on_timer(self):
+        for i in range(0, 60, 2):
+            schedule.every().hours.at(f":{str(i).zfill(2)}").do(lambda: self.loop.add_callback(self.task))
+        while True:
+            schedule.run_pending()
+            await sleep(1)
+
+    async def on_first(self):
+        await self.task()
+
     def run(self):
-        self.loop.run_sync(self.on_timer)
-        PeriodicCallback(self.on_timer, callback_time=datetime.timedelta(minutes=2)).start()
+        self.loop.run_sync(self.on_first)
+        self.loop.add_callback(self.on_timer)
         self.loop.start()
 
 

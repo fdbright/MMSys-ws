@@ -166,6 +166,7 @@ class GetInfoFromDEX:
             dex_price = self.get_dex_price(address=addr, _type="busd")
             self.dex_coin_dict[coin] = dex_price.to_dict()
             time.sleep(4)
+        print(self.dex_coin_dict)
 
     async def set_redis(self):
         conn = await self.redis_pool.open(conn=True)
