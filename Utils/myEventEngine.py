@@ -69,6 +69,9 @@ class RestClient:
     def __init__(self, session: ClientSession = None):
         self.session: ClientSession = session
 
+    async def init_session(self):
+        self.session = ClientSession(trust_env=True)
+
     async def get_response(self, req):
         if req.params:
             query: list = []
@@ -88,10 +91,15 @@ class RestClient:
         )
         try:
             # log.info(cr.url)
-            resp: dict = await cr.json()
+            status_code = cr.status
+            resp: str = await cr.text()
+            try:
+                resp: dict = ujson.loads(resp)
+            except TypeError:
+                pass
         except Exception as e:
             log.error(f"请求失败, url: {cr.url}, err: {e}")
-            resp = {}
+            resp: dict = {}
         del cr
         return resp
 
