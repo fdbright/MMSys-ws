@@ -480,7 +480,7 @@ class FollowTickTemplate(WebsocketClient):
         elif self.conf.follow_with == "cex":
             self.thisPrice = self.cex_price
         # else:
-        #     self.thisPrice = self.dex_price if self.dex_price not in [-1, 0] else self.cmc_price
+        self.thisPrice = self.thisPrice if self.thisPrice not in [-1, 0] else self.cmc_price
 
     async def laying_orders_1st(self):
         """首次执行, 并赋值lastPrice"""

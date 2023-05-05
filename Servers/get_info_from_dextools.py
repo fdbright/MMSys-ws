@@ -64,11 +64,15 @@ class DexSpider:
             resp: dict = {}
         _type: str = ""
         price: float = -1
+        liq: float = -1
         for val in resp.get("results", [{}]):  # type: dict
             price = float(val.get("price", -1) or -1)
             if price not in [-1, 0]:
                 _type = val.get("symbolRef", "")
+                liq = val.get("metrics", {}).get("liquidity", -1)
                 break
+        if liq < 1000:
+            price = -1
         return price, _type
 
     async def polling(self):
