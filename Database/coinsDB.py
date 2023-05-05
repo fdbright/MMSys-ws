@@ -27,6 +27,7 @@ class CBM(BaseModel):
     step_gap = FloatField(null=True)            # 步长
     order_amount = IntegerField(null=True)      # 挂单量
     order_nums = IntegerField(default=30)       # 档位
+    follow_with = CharField(default="dex")      # 策略跟随对象
 
     isUsing = BooleanField(default=False)        # 是否正在做市
     createTime = DateTimeField()                # 添加时间

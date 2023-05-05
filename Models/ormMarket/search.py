@@ -115,7 +115,8 @@ class FromCoinsTb:
         ac_model: ABM = AccountModels[exchange.lower()]
         co_model: CBM = CoinModels[exchange.lower()]
         query = co_model.select(
-            ac_model.apiKey, ac_model.secretKey, ac_model.account, ac_model.team, co_model.isUsing,
+            ac_model.apiKey, ac_model.secretKey, ac_model.account, ac_model.team,
+            co_model.isUsing, co_model.follow_with,
             co_model.profit_rate, co_model.step_gap, co_model.order_amount, co_model.order_nums
         ).join(
             ac_model, on=(co_model.account == ac_model.account)
@@ -132,7 +133,7 @@ class FromCoinsTb:
         co_model: CBM = CoinModels[exchange.lower()]
         query = co_model.select(
             ac_model.apiKey, ac_model.secretKey, ac_model.account, ac_model.team,
-            co_model.symbol, co_model.isUsing,
+            co_model.symbol, co_model.isUsing, co_model.follow_with,
             co_model.profit_rate, co_model.step_gap, co_model.order_amount, co_model.order_nums,
         ).join(
             ac_model, on=(co_model.account == ac_model.account)

@@ -31,6 +31,7 @@ class Coin(FreeDataclass):
     step_gap: float = 0.003
     order_amount: int = 2000
     order_nums: int = 20
+    follow_with: str = "dex"
 
     if1m: bool = False
     team: str = ""

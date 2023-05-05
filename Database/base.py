@@ -60,8 +60,8 @@ if __name__ == '__main__':
     # migrator = SqliteMigrator(db)
     with db.atomic():
         migrate(
-            migrator.drop_column("coins_lbk", "isUsing"),
-            migrator.add_column("coins_lbk", "isUsing", BooleanField(default=False)),
+            # migrator.drop_column("coins_lbk", "isUsing"),
+            migrator.add_column("coins_lbk", "follow_with", CharField(default="dex")),
         )
 
     db.connect(reuse_if_open=True)

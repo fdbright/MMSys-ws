@@ -42,13 +42,14 @@ class Coins(MyActionTemplate):
                 coins: List[CoinObj] = OrmMarket.search.fromCoinsTb.byTeam(item.exchange, self.current_user.team)
             cex_price_dict: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key=f"{item.exchange.lower()}_price")
             cmc_price_dict: dict = await self.redis_conn.hGet(name="CMC-DB", key="cmc_price")
-            dex_price_dict: dict = await self.redis_conn.hGet(name="DEX-DB")
+            # dex_price_dict: dict = await self.redis_conn.hGet(name="DEX-DB")
+            dex_price_dict: dict = await self.redis_conn.hGet(name="DEX-DB", key="dex_price")
             contract_data: dict = await self.redis_conn.hGet(name=f"{item.exchange.upper()}-DB", key="contract_data")
             data = []
             for coin in coins:
                 price_tick = int(contract_data.get(coin.symbol, {}).get("priceTick", 18))
                 cmc_price = round(float(cmc_price_dict.get(coin.symbol, {}).get("price", -1)), price_tick)
-                dex_price = round(float(ujson.loads(dex_price_dict.get(coin.symbol, "{}")).get("price", -1)), price_tick)
+                dex_price = round(float(dex_price_dict.get(coin.symbol, {}).get("price", -1)), price_tick)
                 cex_price = float(cex_price_dict.get(coin.symbol, -1))
                 # log.info(f"dex_price: {dex_price}, cmc_price: {cmc_price}")
                 if cmc_price in [-1, 0] or not cmc_price:

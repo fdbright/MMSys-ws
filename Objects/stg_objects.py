@@ -23,6 +23,7 @@ class Conf(FreeDataclass):
     order_amount: int = -1      # 挂单量
     order_nums: int = -1        # 档位
     profit_rate: float = -1     # 点差
+    follow_with: str = "dex"
 
 
 @dataclass(frozen=True)
