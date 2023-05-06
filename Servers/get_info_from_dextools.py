@@ -73,7 +73,7 @@ class DexSpider:
                 break
         if liq < 1000:
             price = -1
-        return price, _type
+        return price, _type, liq
 
     async def polling(self):
         """轮询"""
@@ -85,8 +85,8 @@ class DexSpider:
                     if coin.f_coin_addr in ["主网代币", "合约升级中"]:
                         self.dex_price[coin.symbol] = {"type": coin.f_coin_addr, "price": -1}
                         continue
-                    price, _type = await self.get_price(index=index, addr=coin.f_coin_addr)
-                    dex_price = {"type": _type, "price": price}
+                    price, _type, liq = await self.get_price(index=index, addr=coin.f_coin_addr)
+                    dex_price = {"type": _type, "price": price, "liquidity": liq}
                     self.dex_price[coin.symbol] = dex_price
                     await conn.hset(name=self.name, key=coin.symbol, value=dex_price)
                 except Exception as e:
