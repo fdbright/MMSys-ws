@@ -8,11 +8,13 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from loguru import logger as log
 from typing import List
 
-import time
-from datetime import timedelta, datetime
+import schedule
+import pandas as pd
 from aiohttp import ClientSession
-from tornado.ioloop import PeriodicCallback, IOLoop
+from tornado.gen import sleep
+from tornado.ioloop import IOLoop
 
+from Config import Configure
 from Utils import MyAioredis, MyDatetime
 from Objects import AccountObj
 from Database import db
@@ -40,10 +42,6 @@ class GetInfoFromLBK:
         # account
         self.accounts: List[AccountObj] = []
 
-        self.account_01: str = ""
-        self.account_09: str = ""
-        self.account_17: str = ""
-
         # redis_data
         self.last_coin_data: dict = {}
         self.this_coin_data: dict = {}
@@ -56,6 +54,15 @@ class GetInfoFromLBK:
         self.loop = IOLoop.current()
         self.first_time: bool = True
 
+        self.save_path = "/home/ec2-user/MMSys-ws/Servers/price_data.csv"
+
+    @staticmethod
+    def add_time(val: dict) -> dict:
+        dt = MyDatetime.today()
+        val["upgrade_time"] = MyDatetime.dt2ts(dt, thousand=True)
+        val["upgrade_time_dt"] = MyDatetime.dt2str(dt)
+        return val
+
     async def init_api(self):
         self.api = LbkRestApi(ClientSession(trust_env=True))
 
@@ -65,99 +72,148 @@ class GetInfoFromLBK:
         db.close()
 
     async def on_coin(self):
+        conn = await self.redis_pool.open(conn=True)
         db.connect(reuse_if_open=True)
-        self.this_coin_data: dict = OrmMarket.search.fromCoinsTb.all4redis(exchange=self.exchange)
-        db.close()
-        if not self.first_time:
-            if self.this_coin_data != self.last_coin_data:
-                await self.on_contract()
+        try:
+            self.this_coin_data: dict = OrmMarket.search.fromCoinsTb.all4redis(exchange=self.exchange)
+            if not self.first_time:
+                if self.this_coin_data != self.last_coin_data:
+                    await self.on_contract()
+            else:
+                self.first_time = False
+            self.last_coin_data = self.this_coin_data
+            await conn.hSet(name=self.name, key="lbk_db", value=self.add_time(self.this_coin_data))
+        except Exception as e:
+            log.warning(f"coin, err: {e}")
         else:
-            self.first_time = False
-        self.last_coin_data = self.this_coin_data
+            self.this_coin_data = {}
+            log.info("on_coin")
+        finally:
+            db.close()
+            await conn.close()
+            del conn
 
     async def on_tick(self):
-        data = await self.api.query_tick()
-        self.tick_data = data["ticker"]
+        conn = await self.redis_pool.open(conn=True)
+        try:
+            data = await self.api.query_tick()
+            self.tick_data = data["ticker"]
+            await conn.hSet(name=self.name, key="lbk_price", value=self.add_time(self.tick_data))
+        except Exception as e:
+            log.warning(f"tick, err: {e}")
+        else:
+            del data
+            self.tick_data = {}
+            log.info("on_tick")
+        finally:
+            await conn.close()
+            del conn
 
     async def on_contract(self):
-        data = await self.api.query_contract()
-        self.contract_data = data["contract_dict"]
+        conn = await self.redis_pool.open(conn=True)
+        try:
+            data = await self.api.query_contract()
+            self.contract_data = data["contract_dict"]
+            await conn.hSet(name=self.name, key="contract_data", value=self.add_time(self.contract_data))
+        except Exception as e:
+            log.warning(f"contract, err: {e}")
+        else:
+            del data
+            self.contract_data = {}
+            log.info("on_contract")
+        finally:
+            await conn.close()
+            del conn
 
     async def on_account(self):
-        await self.get_info_from_mysql()
-        for account in self.accounts:
-            self.account_data[account.account] = {}
-            self.api.api_key = account.apiKey
-            self.api.secret_key = account.secretKey
-            data = await self.api.query_account_info()
-            for val in data.get("account_lst", []):
-                self.account_data[account.account][val["symbol"]] = val
-            time.sleep(0.2)
-        print(self.account_data)
+        while True:
+            conn = await self.redis_pool.open(conn=True)
+            await self.get_info_from_mysql()
+            try:
+                for account in self.accounts:
+                    try:
+                        self.account_data[account.account] = {}
+                        self.api.api_key = account.apiKey
+                        self.api.secret_key = account.secretKey
+                        data = await self.api.query_account_info()
+                        for val in data.get("account_lst", []):
+                            self.account_data[account.account][val["symbol"]] = val
+                    except Exception as e:
+                        log.warning(f"account: {account}, err: {e}")
+                    else:
+                        del data
+                    finally:
+                        await sleep(0.2)
+            except Exception as e:
+                log.warning(f"account, err: {e}")
+            else:
+                log.info("on_account")
+            finally:
+                await conn.close()
+                del conn
+            await sleep(10)
+
+    async def save_account(self, hour: str):
+        conn = await self.redis_pool.open(conn=True)
+        try:
+            await conn.hSet(name=self.name, key=f"account_data_{hour}", value=self.add_time(self.account_data))
+        except Exception as e:
+            log.warning(f"save_account, err: {e}")
+        else:
+            log.info(f"save_account: {hour}")
+        finally:
+            await conn.close()
+            del conn
+
+    async def send_mail(self):
+        conn = await self.redis_pool.open(conn=True)
+        try:
+            data = await conn.hGet(name=self.name, key="lbk_price")
+            df = pd.DataFrame([{"symbol": k, "price": v} for k, v in data.items()])
+            df.to_csv(self.save_path)
+            msg = {
+                "receivers": ["erzhong.qi@lbk.one"],
+                "sub_title": "每日推送",
+                "sub_content": "",
+                "filename": "price_data",
+                "filepath": self.save_path
+            }
+            await conn.publish(channel=Configure.REDIS.send_mail_channel, msg=msg)
+        except Exception as e:
+            log.warning(f"send_mail, err: {e}")
+        else:
+            del data, df, msg
+            log.info("send_mail")
+        finally:
+            await conn.close()
+            del conn
 
     async def on_first(self):
         await self.init_api()
         await self.on_coin()
         await self.on_tick()
-        await self.on_account()
         await self.on_contract()
 
-    async def set_redis(self):
-        conn = await self.redis_pool.open(conn=True)
-        dt = MyDatetime.today()
-        upgrade_time = MyDatetime.dt2ts(dt, thousand=True)
-        upgrade_time_dt = MyDatetime.dt2str(dt)
-        current_time = datetime.now() + timedelta(hours=8)
-        current_hour = str(current_time.hour).zfill(2)
-        current_date = str(current_time.day).zfill(2) + current_hour
+    async def on_timer(self):
+        schedule.every(interval=2).minutes.do(lambda: self.loop.add_callback(self.on_coin))
+        schedule.every(interval=5).seconds.do(lambda: self.loop.add_callback(self.on_tick))
+        schedule.every(interval=30).minutes.do(lambda: self.loop.add_callback(self.on_contract))
 
-        if self.this_coin_data:
-            self.this_coin_data["upgrade_time"] = upgrade_time
-            self.this_coin_data["upgrade_time_dt"] = upgrade_time_dt
-            await conn.hSet(name=self.name, key="lbk_db", value=self.this_coin_data)
-            self.this_coin_data = {}
+        schedule.every().days.at("01:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="01")))
+        schedule.every().days.at("09:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="09")))
+        schedule.every().days.at("17:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="17")))
 
-        if self.tick_data:
-            self.tick_data["upgrade_time"] = upgrade_time
-            self.tick_data["upgrade_time_dt"] = upgrade_time_dt
-            await conn.hSet(name=self.name, key="lbk_price", value=self.tick_data)
-            self.tick_data = {}
+        schedule.every().days.at("11:20").do(lambda: self.loop.add_callback(self.send_mail))
+        while True:
+            schedule.run_pending()
+            await sleep(1)
 
-        if self.contract_data:
-            self.contract_data["upgrade_time"] = upgrade_time
-            self.contract_data["upgrade_time_dt"] = upgrade_time_dt
-            await conn.hSet(name=self.name, key="contract_data", value=self.contract_data)
-            self.contract_data = {}
-
-        if self.account_data:
-            self.account_data["upgrade_time"] = upgrade_time
-            self.account_data["upgrade_time_dt"] = upgrade_time_dt
-            await conn.hSet(name=self.name, key="account_data", value=self.account_data)
-            if current_hour == "01":
-                if self.account_01 != current_date:
-                    await conn.hSet(name=self.name, key="account_data_01", value=self.account_data)
-                    self.account_01 = current_date
-            if current_hour == "09":
-                if self.account_09 != current_date:
-                    await conn.hSet(name=self.name, key="account_data_09", value=self.account_data)
-                    self.account_09 = current_date
-            if current_hour == "17":
-                if self.account_17 != current_date:
-                    await conn.hSet(name=self.name, key="account_data_17", value=self.account_data)
-                    self.account_17 = current_date
-
-        await conn.close()
-        del conn, dt, upgrade_time, upgrade_time_dt
-
-    def main(self):
+    def run(self):
         self.loop.run_sync(self.on_first)
-        PeriodicCallback(callback=self.set_redis, callback_time=timedelta(seconds=5), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_coin, callback_time=timedelta(minutes=2), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_tick, callback_time=timedelta(seconds=5), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_account, callback_time=timedelta(minutes=5), jitter=0.2).start()
-        PeriodicCallback(callback=self.on_contract, callback_time=timedelta(minutes=30), jitter=0.2).start()
+        self.loop.add_callback(self.on_timer)
+        self.loop.add_callback(self.on_account)
         self.loop.start()
 
 
 if __name__ == '__main__':
-    GetInfoFromLBK().main()
+    GetInfoFromLBK().run()
