@@ -85,9 +85,13 @@ class REDIS(FrozenDataclass):
 @dataclass(frozen=True)
 class EMAIL(FrozenDataclass):
     """邮件配置"""
-    host: str = "smtp.yeah.net"
-    user: int = "lbank098@yeah.net"
-    password: str = "JIBGZZDEDMYFBHOL"
+    # host: str = "smtp.yeah.net"
+    # user: int = "lbank098@yeah.net"
+    # password: str = "JIBGZZDEDMYFBHOL"
+
+    host: str = "smtp.qiye.aliyun.com"
+    user: str = "market.stream@lbk.one"
+    password: str = "Lbank369!"
 
     channel: str = "SendMail"
 

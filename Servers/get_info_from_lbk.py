@@ -154,6 +154,18 @@ class GetInfoFromLBK:
                 del conn
             await sleep(5)
 
+    async def set_redis(self):
+        conn = await self.redis_pool.open(conn=True)
+        try:
+            pass
+        except Exception as e:
+            log.warning(f"set_redis, err: {e}")
+        else:
+            pass
+        finally:
+            await conn.close()
+            del conn
+
     async def save_account(self, hour: str):
         conn = await self.redis_pool.open(conn=True)
         try:
@@ -202,6 +214,7 @@ class GetInfoFromLBK:
     async def on_timer(self):
         schedule.every(interval=2).minutes.do(lambda: self.loop.add_callback(self.on_coin))
         schedule.every(interval=5).seconds.do(lambda: self.loop.add_callback(self.on_tick))
+        schedule.every(interval=5).seconds.do(lambda: self.loop.add_callback(self.set_redis))
         schedule.every(interval=30).minutes.do(lambda: self.loop.add_callback(self.on_contract))
 
         # +8hour
