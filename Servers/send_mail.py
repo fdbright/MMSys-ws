@@ -44,22 +44,29 @@ class SendMail:
         async for item in self._queue:  # type: dict
             log.info(f"to_send: {item}")
             fp: str = ""
-            self.me.init_msg(
-                receivers=item["receivers"],
-                sub_title=item["title"],
-                sub_content=item["content"]
-            )
-            if "filename" in item.keys():
-                fp = item["filepath"]
-                self.me.add_file(
-                    filename=item["filename"],
-                    filepath=fp
+            try:
+                self.me.init_msg(
+                    receivers=item["receivers"],
+                    sub_title=item["title"],
+                    sub_content=item["content"]
                 )
-            self.me.send_mail()
-            await sleep(1)
-            if fp and item.get("delete", False):
-                os.remove(fp)
+                if "filename" in item.keys():
+                    fp = item["filepath"]
+                    self.me.add_file(
+                        filename=item["filename"],
+                        filepath=fp
+                    )
+                self.me.send_mail()
                 await sleep(1)
+                if fp and item.get("delete", False):
+                    os.remove(fp)
+                    await sleep(1)
+            except Exception as e:
+                log.warning(f"send_mail, err: {e}")
+            else:
+                pass
+            finally:
+                del fp
 
     def run(self):
         self.loop.add_callback(self.subscribe)

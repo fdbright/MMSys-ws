@@ -8,6 +8,7 @@ sys.path.append("/home/ec2-user/MMSys-ws")
 from loguru import logger as log
 from typing import List
 
+import os
 import schedule
 import pandas as pd
 from aiohttp import ClientSession
@@ -15,7 +16,7 @@ from tornado.gen import sleep
 from tornado.ioloop import IOLoop
 
 from Config import Configure
-from Utils import MyAioredis, MyDatetime
+from Utils import MyAioredis, MyDatetime, MyAioSubprocess
 from Objects import AccountObj
 from Database import db
 from Models import LbkRestApi, OrmMarket
@@ -151,7 +152,7 @@ class GetInfoFromLBK:
             finally:
                 await conn.close()
                 del conn
-            await sleep(10)
+            await sleep(5)
 
     async def save_account(self, hour: str):
         conn = await self.redis_pool.open(conn=True)
@@ -168,13 +169,17 @@ class GetInfoFromLBK:
     async def send_mail(self):
         conn = await self.redis_pool.open(conn=True)
         try:
+            if os.path.exists(self.save_path):
+                os.remove(self.save_path)
             data = await conn.hGet(name=self.name, key="lbk_price")
             df = pd.DataFrame([{"symbol": k, "price": v} for k, v in data.items()])
             df.to_csv(self.save_path)
+            # print(df)
             msg = {
                 "receivers": ["erzhong.qi@lbk.one"],
-                "sub_title": "每日推送",
-                "sub_content": "",
+                # "receivers": ["hai.shi@Lbk.one"],
+                "title": "每日推送",
+                "content": "",
                 "filename": "price_data",
                 "filepath": self.save_path
             }
@@ -199,11 +204,12 @@ class GetInfoFromLBK:
         schedule.every(interval=5).seconds.do(lambda: self.loop.add_callback(self.on_tick))
         schedule.every(interval=30).minutes.do(lambda: self.loop.add_callback(self.on_contract))
 
-        schedule.every().days.at("01:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="01")))
-        schedule.every().days.at("09:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="09")))
-        schedule.every().days.at("17:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="17")))
+        # +8hour
+        schedule.every().days.at("17:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="01")))
+        schedule.every().days.at("01:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="09")))
+        schedule.every().days.at("09:00").do(lambda: self.loop.add_callback(lambda: self.save_account(hour="17")))
 
-        schedule.every().days.at("11:20").do(lambda: self.loop.add_callback(self.send_mail))
+        schedule.every().days.at("03:20").do(lambda: self.loop.add_callback(self.send_mail))
         while True:
             schedule.run_pending()
             await sleep(1)
